@@ -123,7 +123,6 @@ export class PiSessionSockets {
   readonly #getWebSockets: (tag?: string) => WebSocket[];
   readonly #watches = new Map<WebSocket, ConversationWatch>();
   readonly #beforeSubmit: BeforeSubmit | undefined;
-  #closed = false;
 
   constructor(
     harness: PiHarness,
@@ -169,13 +168,6 @@ export class PiSessionSockets {
     }
   }
 
-  async close(): Promise<void> {
-    this.#closed = true;
-    const watches = [...this.#watches.values()];
-    this.#watches.clear();
-    await Promise.all(watches.map((watch) => watch.stop()));
-  }
-
   async #onConnect(connection: Connection, ctx: ConnectionContext) {
     const session = sessionFromRequest(ctx.request, ROOT_SESSION);
     send(connection, {
@@ -199,7 +191,7 @@ export class PiSessionSockets {
     window: ConversationWindow = {}
   ): Promise<void> {
     const watch = await this.#harness.session(session).watch(window);
-    if (this.#closed || socket.readyState !== OPEN) {
+    if (socket.readyState !== OPEN) {
       await watch.stop();
       return;
     }
@@ -241,7 +233,7 @@ export class PiSessionSockets {
     if (end.kind === "stopped" || end.kind === "aborted") return;
     if (this.#watches.get(socket) !== watch) return;
     this.#watches.delete(socket);
-    if (this.#closed || socket.readyState !== OPEN) return;
+    if (socket.readyState !== OPEN) return;
     await this.#watchOrClose(socket, session, resumeAfter(last));
   }
 

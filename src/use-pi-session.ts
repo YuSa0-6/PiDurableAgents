@@ -11,7 +11,7 @@ import type {
   ToolInfo
 } from "./protocol";
 
-export type ConnectionStatus = "connecting" | "open" | "closed";
+type ConnectionStatus = "connecting" | "open" | "closed";
 
 type State = SessionView & {
   readonly status: ConnectionStatus;
@@ -103,35 +103,7 @@ export function usePiSession(object: string) {
     outbox.sendPending((data) => agent.send(data));
   }, [state.status, agent, mirror, outbox]);
 
-  const send = useCallback(
-    (message: ClientMessage) => {
-      if (agent.readyState === WebSocket.OPEN) {
-        agent.send(JSON.stringify(message));
-      }
-    },
-    [agent]
-  );
-
-  /**
-   * Idle: starts a run. Busy: queued as a follow-up, or steers the run.
-   * Kept in the outbox until answered, and sent again if the socket drops
-   * first.
-   */
-  const submit = useCallback(
-    (text: string, whenBusy: "followUp" | "steer" = "followUp") =>
-      send(outbox.submit(text, whenBusy)),
-    [send, outbox]
-  );
-
-  const abort = useCallback(
-    () => send({ type: "abort", id: crypto.randomUUID() }),
-    [send]
-  );
-
-  const reset = useCallback(
-    () => send({ type: "reset", id: crypto.randomUUID() }),
-    [send]
-  );
+  const { submit, abort, reset } = useCommands(agent, outbox);
 
   /** Run one page load of this object's mirror, showing `loading` meanwhile. */
   const load = useCallback(
@@ -163,6 +135,47 @@ export function usePiSession(object: string) {
   );
 
   return { ...state, submit, abort, reset, loadEarlier, fillGap };
+}
+
+/** The socket's side of `useAgent`, all `useCommands` needs. */
+type CommandSocket = {
+  readonly readyState: number;
+  send(data: string): void;
+};
+
+/** The commands the client sends: submit, abort and reset. */
+function useCommands(agent: CommandSocket, outbox: PiCommandOutbox) {
+  const send = useCallback(
+    (message: ClientMessage) => {
+      if (agent.readyState === WebSocket.OPEN) {
+        agent.send(JSON.stringify(message));
+      }
+    },
+    [agent]
+  );
+
+  /**
+   * Idle: starts a run. Busy: queued as a follow-up, or steers the run.
+   * Kept in the outbox until answered, and sent again if the socket drops
+   * first.
+   */
+  const submit = useCallback(
+    (text: string, whenBusy: "followUp" | "steer" = "followUp") =>
+      send(outbox.submit(text, whenBusy)),
+    [send, outbox]
+  );
+
+  const abort = useCallback(
+    () => send({ type: "abort", id: crypto.randomUUID() }),
+    [send]
+  );
+
+  const reset = useCallback(
+    () => send({ type: "reset", id: crypto.randomUUID() }),
+    [send]
+  );
+
+  return { submit, abort, reset };
 }
 
 function createMirror(
