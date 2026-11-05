@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { evictDurableObject } from "cloudflare:test";
 import { routeAgentRequest } from "agents";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { PiSessionMirror } from "../mirror";
 import type { PiServerMessage } from "../protocol";
 import type { PiMessage } from "../transcript";

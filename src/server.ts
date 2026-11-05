@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { Workspace, type DurableObjectStorageLike } from "@cloudflare/computer";
-import { WorkerJavaScriptBackend } from "@cloudflare/computer/backends/worker-javascript";
+import { CodemodeBackend } from "@cloudflare/computer/backends/codemode";
 import { createGitClient } from "@cloudflare/computer/git";
 import { createGitModule } from "@cloudflare/computer/modules/git";
 import { createModels } from "@earendil-works/pi-ai/models";
@@ -26,18 +26,18 @@ export class PiAgent extends DurableObject<Env> {
   readonly ai = createAI({ binding: this.env.AI });
   // A durable filesystem on the object's SQLite, beside pi's own tables.
   // `exec` runs JavaScript modules in a fresh Dynamic Worker per call, with
-  // no network of its own. `git` turns on `workspace.git`, which the `ws:git`
+  // no network of its own. `git` turns on `workspace.git`, which the `codemode:git`
   // module calls in the host; `allowNetwork` lets it clone, fetch and push.
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
     git: createGitClient(),
     backends: [
-      new WorkerJavaScriptBackend({
+      new CodemodeBackend({
         id: JAVASCRIPT_BACKEND,
         loader: this.env.LOADER,
         root: "/workspace",
         access: "read-write",
-        modules: { "ws:git": createGitModule({ allowNetwork: true }) }
+        modules: { "codemode:git": createGitModule({ allowNetwork: true }) }
       })
     ]
   });

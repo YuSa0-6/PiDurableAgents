@@ -99,9 +99,9 @@ curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisi
 | Hono | Event Router | `src/router.ts` |
 | `cf` CLI | Cloudflare リソースの確認・操作 | `pnpm exec cf cli search "<やりたいこと>"` |
 | Wrangler | デプロイ | `pnpm run deploy` |
-| Vitest 4 | Workers 上のテスト | `pnpm test` |
+| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test` |
 
-テストは `@cloudflare/vitest-pool-workers` が Vitest 4 にだけ対応しているため、Vite+ 同梱の Vitest 5 ではなく Vitest 4.1.11 で動かします（`pnpm-workspace.yaml` の catalog で固定）。
+テストは `vp test` で動かします。Workers ランタイム上で実行するために `@cloudflare/vitest-plugin`（旧 `@cloudflare/vitest-pool-workers`）を使います。
 
 ## ローカルで動かす
 
@@ -148,5 +148,6 @@ UI を小さくするため、コードのシンタックスハイライト（`@
 | 判定ログ | なし | Durable Object の SQLite に `router_decisions` テーブル |
 | ビルド | Vite | Vite+ |
 | `agents` バージョン | `*`（monorepo 内） | `^0.33.0`（Pi 1.5 対応） |
+| `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`） |
 
 Pi harness 本体の設計メモは [`docs/upstream-README.md`](docs/upstream-README.md) と [`docs/upstream-NOTES.md`](docs/upstream-NOTES.md) にあります。Pi は MIT ライセンスです（[`licenses/mit-earendil-pi.txt`](licenses/mit-earendil-pi.txt)）。

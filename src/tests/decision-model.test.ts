@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { decide, POLICY, type RouterEvent } from "../decision-model";
 
 function event(text: string): RouterEvent {

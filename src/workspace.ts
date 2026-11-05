@@ -25,7 +25,7 @@ const REPLAY_SAFE = new Set(["read", "ls", "find", "grep", "write", "delete"]);
 const EXEC_DESCRIPTION = `Run JavaScript in the workspace. \`command\` is the source of an ES module, run in a fresh sandboxed isolate with no network access. If the module default-exports a function, it is called with \`input\` and its return value comes back as \`result\`. console.log and console.error go to stdout and stderr. There is no shell, npm or package install: the only imports are these two, plus relative imports of .js files in the workspace.
 
 - \`node:fs/promises\`: the workspace files, async only (readFile, writeFile, mkdir, rm, readdir, stat, lstat, access). readFile takes "utf8" for text.
-- \`ws:git\`: git on the workspace, cloning over HTTPS through the host. Each \`dir\` is resolved against the module's working directory, defaults to it, and must stay inside /workspace, so pass the repository's directory. Its exports:
+- \`codemode:git\`: git on the workspace, cloning over HTTPS through the host. Each \`dir\` is resolved against the module's working directory, defaults to it, and must stay inside /workspace, so pass the repository's directory. Its exports:
 
 \`\`\`ts
 function clone(options: {
@@ -56,7 +56,7 @@ function log(options?: { dir?: string; ref?: string; depth?: number }): Promise<
 \`\`\`
 
 Example:
-import { clone, log } from "ws:git";
+import { clone, log } from "codemode:git";
 export default async function () {
   await clone({ url: "https://github.com/octocat/Hello-World", dir: "/workspace/hello", depth: 5 });
   return (await log({ dir: "/workspace/hello" })).map((c) => \`\${c.oid.slice(0, 7)} \${c.message.split("\\n")[0]}\`);

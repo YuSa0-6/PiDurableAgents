@@ -19,7 +19,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { DurableObject } from "cloudflare:workers";
 import { Workspace, type DurableObjectStorageLike } from "@cloudflare/computer";
-import { WorkerJavaScriptBackend } from "@cloudflare/computer/backends/worker-javascript";
+import { CodemodeBackend } from "@cloudflare/computer/backends/codemode";
 import {
   PiHarness,
   type PiOperationResult,
@@ -98,7 +98,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
     backends: [
-      new WorkerJavaScriptBackend({
+      new CodemodeBackend({
         id: JAVASCRIPT_BACKEND,
         loader: this.env.LOADER,
         root: "/workspace",

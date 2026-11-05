@@ -1,6 +1,6 @@
 import path from "node:path";
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
-import { defineConfig } from "vitest/config";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import { defineConfig } from "vite-plus";
 
 const testsDir = import.meta.dirname;
 
