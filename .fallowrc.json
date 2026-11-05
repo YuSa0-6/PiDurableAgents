@@ -1,0 +1,19 @@
+{
+  // This file is JSONC: fallow reads these comments; generic JSON tools may not.
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // Packages that no source file imports, kept on purpose.
+  "ignoreDependencies": [
+    // Listed so vite.config.ts and src/tests/vitest.config.ts can dedupe it:
+    // the harness and the app must share one copy of pi's module state.
+    "@earendil-works/pi-telemetry",
+    // pi-ai and pi-schema need exactly typebox 1.3.27 (see dependabot.yml).
+    "typebox",
+    // A CLI, run as `pnpm exec cf` (see README "ツールチェーン").
+    "cf"
+  ],
+  "duplicates": {
+    // Reviewed: src/tests/worker.ts copies the socket wiring of
+    // src/server.ts on purpose, so the tests run the same wiring.
+    "ignoredClones": ["dup:84d8301f:2"]
+  }
+}
