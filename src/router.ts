@@ -47,7 +47,7 @@ function badRequest(message: string): HTTPException {
 }
 
 /** Normalise any accepted body into a RouterEvent. */
-export function normalise(body: EventBody): RouterEvent {
+function normalise(body: EventBody): RouterEvent {
   const session = str(body.session, "default");
   if (!SESSION_PATTERN.test(session)) {
     throw badRequest("session must match [A-Za-z0-9_-]{1,64}");

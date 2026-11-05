@@ -421,12 +421,19 @@ function Sidebar({
   );
 }
 
-function App() {
-  const [session, setSession] = useState(getSession);
-  const [prompt, setPrompt] = useState("");
-  const [toolsOpen, setToolsOpen] = useState(
-    () => window.matchMedia("(min-width: 1100px)").matches
-  );
+type PiSession = ReturnType<typeof usePiSession>;
+type WhenBusy = "followUp" | "steer";
+
+/**
+ * Keep the conversation scrolled: follow new messages at the bottom, and
+ * keep the screen in place while earlier messages load above.
+ */
+function useChatScroll(
+  messages: PiSession["messages"],
+  live: PiSession["live"],
+  running: boolean,
+  loading: boolean
+) {
   const endRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLElement>(null);
   // Distance from the bottom to keep while earlier messages load above.
@@ -435,24 +442,6 @@ function App() {
   // then, not while they read earlier ones.
   const following = useRef(true);
   const lastScrollTop = useRef(0);
-  const {
-    status,
-    messages,
-    earlier,
-    loading,
-    live,
-    running,
-    tools: running_,
-    catalog,
-    queued,
-    retry,
-    error,
-    submit: submitPrompt,
-    abort,
-    loadEarlier,
-    fillGap
-  } = usePiSession(session);
-  const runningTools = running_.map((tool) => tool.name);
   const newestId = messages.at(-1)?.id;
   const oldestId = messages[0]?.id;
 
@@ -462,6 +451,15 @@ function App() {
       endRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [newestId, live, running]);
+
+  // Earlier messages loaded above: keep what was on screen in place.
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller !== null && keepFromBottom.current !== null) {
+      scroller.scrollTop = scroller.scrollHeight - keepFromBottom.current;
+    }
+    if (!loading) keepFromBottom.current = null;
+  }, [oldestId, loading]);
 
   // Scrolling up stops following; scrolling back to the bottom resumes it.
   const onScroll = () => {
@@ -476,39 +474,323 @@ function App() {
     lastScrollTop.current = scroller.scrollTop;
   };
 
-  // Earlier messages loaded above: keep what was on screen in place.
-  useLayoutEffect(() => {
-    const scroller = scrollRef.current;
-    if (scroller !== null && keepFromBottom.current !== null) {
-      scroller.scrollTop = scroller.scrollHeight - keepFromBottom.current;
-    }
-    if (!loading) keepFromBottom.current = null;
-  }, [oldestId, loading]);
-
-  const showEarlier = () => {
+  /** Remember the distance from the bottom before earlier messages load. */
+  const keepPosition = () => {
     const scroller = scrollRef.current;
     if (scroller !== null) {
       keepFromBottom.current = scroller.scrollHeight - scroller.scrollTop;
     }
+  };
+
+  /** Bring the conversation back to the bottom on the next message. */
+  const follow = () => {
+    following.current = true;
+  };
+
+  return { endRef, scrollRef, onScroll, keepPosition, follow };
+}
+
+const STATUS_LABEL: Record<PiSession["status"], string> = {
+  open: "Live",
+  connecting: "Connecting",
+  closed: "Reconnecting"
+};
+
+function ChatHeader({
+  session,
+  status,
+  toolsOpen,
+  onToggleTools,
+  onNewSession
+}: {
+  session: string;
+  status: PiSession["status"];
+  toolsOpen: boolean;
+  onToggleTools: () => void;
+  onNewSession: () => void;
+}) {
+  return (
+    <header className="shrink-0 border-b border-kumo-line bg-kumo-base">
+      <div className="mx-auto flex h-[68px] max-w-3xl items-center justify-between gap-3 px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-kumo-brand text-white">
+            <BrainIcon size={20} weight="bold" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold">Pi harness</h1>
+            <p className="truncate text-xs text-kumo-subtle">
+              Session <code>{session.slice(0, 8)}</code>
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Badge variant="secondary" className="hidden sm:inline-flex">
+            {MODEL.split("/").at(-1)}
+          </Badge>
+          <Badge variant={status === "open" ? "success" : "secondary"}>
+            {STATUS_LABEL[status]}
+          </Badge>
+          <Button
+            variant="ghost"
+            shape="square"
+            aria-label="Tools"
+            aria-expanded={toolsOpen}
+            onClick={onToggleTools}
+            icon={<WrenchIcon size={16} />}
+          />
+          <Button
+            variant="ghost"
+            shape="square"
+            aria-label="New session"
+            onClick={onNewSession}
+            icon={<PlusIcon size={16} />}
+          />
+          <ModeToggle />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function EmptyState({
+  connected,
+  onSuggest
+}: {
+  connected: boolean;
+  onSuggest: (value: string) => void;
+}) {
+  return (
+    <div className="py-10 sm:py-16">
+      <Empty
+        icon={<BrainIcon size={32} />}
+        title="Ask Pi something that needs a tool"
+        description="Tool calls and results stream in as they happen."
+      />
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        {SUGGESTIONS.map((suggestion) => (
+          <Button
+            key={suggestion.label}
+            variant="secondary"
+            size="sm"
+            icon={suggestion.icon}
+            disabled={!connected}
+            onClick={() => onSuggest(suggestion.value)}
+          >
+            {suggestion.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function runStatusText(
+  retry: PiSession["retry"],
+  runningTools: readonly string[]
+): string {
+  if (retry) return `Retrying: ${retry.error}`;
+  if (runningTools.length > 0) return `Running ${runningTools.join(", ")}`;
+  return "Waiting for the model";
+}
+
+/** Shown while a run is going and no message is streaming yet. */
+function RunStatus({
+  retry,
+  runningTools
+}: {
+  retry: PiSession["retry"];
+  runningTools: readonly string[];
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-kumo-brand text-white">
+        <BrainIcon size={17} weight="bold" />
+      </div>
+      <Surface className="rounded-xl px-4 py-3 ring ring-kumo-line">
+        <div className="flex items-center gap-2 text-sm text-kumo-subtle">
+          <GearIcon size={15} className="animate-spin" />
+          {runStatusText(retry, runningTools)}
+        </div>
+      </Surface>
+    </div>
+  );
+}
+
+/** Live output of the tools that are running. */
+function ToolOutputs({ tools }: { tools: PiSession["tools"] }) {
+  return tools.map((tool) =>
+    tool.output ? (
+      <pre
+        key={tool.callId}
+        className="ml-11 max-h-40 overflow-auto rounded-lg bg-kumo-elevated p-2.5 text-xs"
+      >
+        {tool.output}
+      </pre>
+    ) : null
+  );
+}
+
+/** The send button, or Steer and Stop while a run is going. */
+function ComposerActions({
+  running,
+  connected,
+  hasText,
+  onSteer,
+  onStop
+}: {
+  running: boolean;
+  connected: boolean;
+  hasText: boolean;
+  onSteer: () => void;
+  onStop: () => void;
+}) {
+  if (!running) {
+    return (
+      <Button
+        type="submit"
+        variant="primary"
+        shape="square"
+        aria-label="Send message"
+        disabled={!connected || !hasText}
+        icon={<PaperPlaneRightIcon size={18} />}
+        className="mb-0.5"
+      />
+    );
+  }
+  return (
+    <div className="mb-0.5 flex gap-1.5">
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        aria-label="Steer"
+        disabled={!hasText}
+        onClick={onSteer}
+      >
+        Steer
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        shape="square"
+        aria-label="Stop"
+        onClick={onStop}
+        icon={<StopIcon size={18} weight="fill" />}
+      />
+    </div>
+  );
+}
+
+function Composer({
+  prompt,
+  onPromptChange,
+  connected,
+  running,
+  onSubmit,
+  onStop
+}: {
+  prompt: string;
+  onPromptChange: (value: string) => void;
+  connected: boolean;
+  running: boolean;
+  onSubmit: (whenBusy?: WhenBusy) => void;
+  onStop: () => void;
+}) {
+  return (
+    <div className="shrink-0 border-t border-kumo-line bg-kumo-base">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+        className="mx-auto max-w-3xl px-5 pt-4"
+      >
+        <div className="flex items-end gap-3 rounded-xl border border-kumo-line bg-kumo-base p-3 shadow-sm transition-shadow focus-within:border-transparent focus-within:ring-2 focus-within:ring-kumo-ring">
+          <InputArea
+            value={prompt}
+            onValueChange={onPromptChange}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                onSubmit();
+              }
+            }}
+            placeholder={
+              running
+                ? "Queue a follow-up, or steer the running turn"
+                : "Ask Pi to use a tool"
+            }
+            aria-label="Message Pi"
+            disabled={!connected}
+            rows={2}
+            className="flex-1 !bg-transparent !shadow-none !ring-0 !outline-none focus:!ring-0"
+          />
+          <ComposerActions
+            running={running}
+            connected={connected}
+            hasText={prompt.trim() !== ""}
+            onSteer={() => onSubmit("steer")}
+            onStop={onStop}
+          />
+        </div>
+      </form>
+      <div className="flex items-center justify-center gap-2 px-5 py-3">
+        <span className="hidden text-[10px] text-kumo-inactive sm:inline">
+          Enter to send · Shift+Enter for a new line
+        </span>
+        <span className="hidden text-kumo-line sm:inline">·</span>
+        <PoweredByCloudflare href="https://developers.cloudflare.com/agents/" />
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [session, setSession] = useState(getSession);
+  const [prompt, setPrompt] = useState("");
+  const [toolsOpen, setToolsOpen] = useState(
+    () => window.matchMedia("(min-width: 1100px)").matches
+  );
+  const {
+    status,
+    messages,
+    earlier,
+    loading,
+    live,
+    running,
+    tools,
+    catalog,
+    queued,
+    retry,
+    error,
+    submit: submitPrompt,
+    abort,
+    loadEarlier,
+    fillGap
+  } = usePiSession(session);
+  const scroll = useChatScroll(messages, live, running, loading);
+  const runningTools = tools.map((tool) => tool.name);
+  const connected = status === "open";
+
+  const showEarlier = () => {
+    scroll.keepPosition();
     loadEarlier();
   };
 
-  const connected = status === "open";
-
   /** While a run is going, Enter queues a follow-up and Steer joins the run. */
-  const submit = (whenBusy: "followUp" | "steer" = "followUp") => {
+  const submit = (whenBusy: WhenBusy = "followUp") => {
     const text = prompt.trim();
     if (!text || !connected) return;
     setPrompt("");
     // Sending a message always brings the conversation back to the bottom.
-    following.current = true;
+    scroll.follow();
     submitPrompt(text, whenBusy);
   };
 
   const newSession = () => {
     const next = crypto.randomUUID();
     localStorage.setItem(SESSION_KEY, next);
-    following.current = true;
+    scroll.follow();
     setSession(next);
   };
 
@@ -523,78 +805,22 @@ function App() {
       }`}
     >
       <section className="flex min-h-0 min-w-0 flex-col" aria-label="Chat">
-        <header className="shrink-0 border-b border-kumo-line bg-kumo-base">
-          <div className="mx-auto flex h-[68px] max-w-3xl items-center justify-between gap-3 px-5">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-kumo-brand text-white">
-                <BrainIcon size={20} weight="bold" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="truncate text-base font-semibold">Pi harness</h1>
-                <p className="truncate text-xs text-kumo-subtle">
-                  Session <code>{session.slice(0, 8)}</code>
-                </p>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <Badge variant="secondary" className="hidden sm:inline-flex">
-                {MODEL.split("/").at(-1)}
-              </Badge>
-              <Badge variant={connected ? "success" : "secondary"}>
-                {connected
-                  ? "Live"
-                  : status === "connecting"
-                    ? "Connecting"
-                    : "Reconnecting"}
-              </Badge>
-              <Button
-                variant="ghost"
-                shape="square"
-                aria-label="Tools"
-                aria-expanded={toolsOpen}
-                onClick={() => setToolsOpen((open) => !open)}
-                icon={<WrenchIcon size={16} />}
-              />
-              <Button
-                variant="ghost"
-                shape="square"
-                aria-label="New session"
-                onClick={newSession}
-                icon={<PlusIcon size={16} />}
-              />
-              <ModeToggle />
-            </div>
-          </div>
-        </header>
+        <ChatHeader
+          session={session}
+          status={status}
+          toolsOpen={toolsOpen}
+          onToggleTools={() => setToolsOpen((open) => !open)}
+          onNewSession={newSession}
+        />
 
         <main
-          ref={scrollRef}
-          onScroll={onScroll}
+          ref={scroll.scrollRef}
+          onScroll={scroll.onScroll}
           className="min-h-0 flex-1 overflow-y-auto"
         >
           <div className="mx-auto max-w-3xl space-y-5 px-5 py-6">
             {empty ? (
-              <div className="py-10 sm:py-16">
-                <Empty
-                  icon={<BrainIcon size={32} />}
-                  title="Ask Pi something that needs a tool"
-                  description="Tool calls and results stream in as they happen."
-                />
-                <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <Button
-                      key={suggestion.label}
-                      variant="secondary"
-                      size="sm"
-                      icon={suggestion.icon}
-                      disabled={!connected}
-                      onClick={() => setPrompt(suggestion.value)}
-                    >
-                      {suggestion.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+              <EmptyState connected={connected} onSuggest={setPrompt} />
             ) : null}
 
             {earlier ? (
@@ -626,33 +852,10 @@ function App() {
             ) : null}
 
             {running && !live ? (
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-kumo-brand text-white">
-                  <BrainIcon size={17} weight="bold" />
-                </div>
-                <Surface className="rounded-xl px-4 py-3 ring ring-kumo-line">
-                  <div className="flex items-center gap-2 text-sm text-kumo-subtle">
-                    <GearIcon size={15} className="animate-spin" />
-                    {retry
-                      ? `Retrying: ${retry.error}`
-                      : runningTools.length > 0
-                        ? `Running ${runningTools.join(", ")}`
-                        : "Waiting for the model"}
-                  </div>
-                </Surface>
-              </div>
+              <RunStatus retry={retry} runningTools={runningTools} />
             ) : null}
 
-            {running_.map((tool) =>
-              tool.output ? (
-                <pre
-                  key={tool.callId}
-                  className="ml-11 max-h-40 overflow-auto rounded-lg bg-kumo-elevated p-2.5 text-xs"
-                >
-                  {tool.output}
-                </pre>
-              ) : null
-            )}
+            <ToolOutputs tools={tools} />
 
             {queued > 0 ? (
               <p className="ml-11 text-xs text-kumo-subtle">
@@ -669,80 +872,18 @@ function App() {
               </div>
             ) : null}
 
-            <div ref={endRef} />
+            <div ref={scroll.endRef} />
           </div>
         </main>
 
-        <div className="shrink-0 border-t border-kumo-line bg-kumo-base">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
-            className="mx-auto max-w-3xl px-5 pt-4"
-          >
-            <div className="flex items-end gap-3 rounded-xl border border-kumo-line bg-kumo-base p-3 shadow-sm transition-shadow focus-within:border-transparent focus-within:ring-2 focus-within:ring-kumo-ring">
-              <InputArea
-                value={prompt}
-                onValueChange={setPrompt}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    submit();
-                  }
-                }}
-                placeholder={
-                  running
-                    ? "Queue a follow-up, or steer the running turn"
-                    : "Ask Pi to use a tool"
-                }
-                aria-label="Message Pi"
-                disabled={!connected}
-                rows={2}
-                className="flex-1 !bg-transparent !shadow-none !ring-0 !outline-none focus:!ring-0"
-              />
-              {running ? (
-                <div className="mb-0.5 flex gap-1.5">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label="Steer"
-                    disabled={prompt.trim() === ""}
-                    onClick={() => submit("steer")}
-                  >
-                    Steer
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    shape="square"
-                    aria-label="Stop"
-                    onClick={abort}
-                    icon={<StopIcon size={18} weight="fill" />}
-                  />
-                </div>
-              ) : (
-                <Button
-                  type="submit"
-                  variant="primary"
-                  shape="square"
-                  aria-label="Send message"
-                  disabled={!connected || prompt.trim() === ""}
-                  icon={<PaperPlaneRightIcon size={18} />}
-                  className="mb-0.5"
-                />
-              )}
-            </div>
-          </form>
-          <div className="flex items-center justify-center gap-2 px-5 py-3">
-            <span className="hidden text-[10px] text-kumo-inactive sm:inline">
-              Enter to send · Shift+Enter for a new line
-            </span>
-            <span className="hidden text-kumo-line sm:inline">·</span>
-            <PoweredByCloudflare href="https://developers.cloudflare.com/agents/" />
-          </div>
-        </div>
+        <Composer
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          connected={connected}
+          running={running}
+          onSubmit={submit}
+          onStop={abort}
+        />
       </section>
 
       {toolsOpen ? (
