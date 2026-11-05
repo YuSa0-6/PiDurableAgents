@@ -33,6 +33,23 @@ describe("App session and connection", () => {
     expect(screen.getByText("Live")).toBeInTheDocument();
   });
 
+  it("shows auto routing until a model answers", () => {
+    renderApp();
+    expect(screen.getByText("auto · d1.1")).toBeInTheDocument();
+  });
+
+  it("shows the model that wrote the newest answer", () => {
+    renderApp({
+      messages: [
+        entry("assistant", [], { id: "a", model: "openai/gpt-old" }),
+        entry("assistant", [], { id: "b", model: "@cf/zai-org/glm-5.3-flash" }),
+        // An answer without a model leaves the badge on the last known one.
+        entry("assistant", [], { id: "c" })
+      ]
+    });
+    expect(screen.getByText("glm-5.3-flash")).toBeInTheDocument();
+  });
+
   it("creates and stores a session when none is stored", () => {
     localStorage.clear();
     renderApp();

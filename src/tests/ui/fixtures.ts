@@ -14,7 +14,7 @@ export const PIXEL =
 export function entry(
   role: EntryRole,
   parts: readonly TranscriptPart[],
-  extra: { id?: string; error?: string } = {}
+  extra: { id?: string; error?: string; model?: string } = {}
 ): TranscriptMessage {
   return { id: extra.id ?? `${role}-1`, role, parts, timestamp: 1, ...extra };
 }

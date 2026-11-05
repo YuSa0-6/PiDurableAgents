@@ -23,13 +23,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ToolInfo } from "../protocol";
 import { usePiSession } from "../use-pi-session";
-import type { ConnectionStatus } from "../use-pi-session";
 import { Composer } from "./composer";
 import type { WhenBusy } from "./composer";
 import { Message } from "./messages";
 
 const SESSION_KEY = "pi-harness-session";
-const MODEL = "@cf/zai-org/glm-5.3-flash";
 /** How close to the bottom (px) still counts as "at the bottom". */
 const BOTTOM_THRESHOLD = 32;
 
@@ -53,6 +51,9 @@ const SUGGESTIONS = [
       "Clone https://github.com/octocat/Hello-World into /workspace/hello, then show its git log."
   }
 ] satisfies Array<{ icon: ReactNode; label: string; value: string }>;
+
+type PiSession = ReturnType<typeof usePiSession>;
+type ConnectionStatus = PiSession["status"];
 
 const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
   open: "Live",
@@ -140,12 +141,15 @@ function Sidebar({
 
 function Header({
   session,
+  model,
   status,
   toolsOpen,
   onToggleTools,
   onNewSession
 }: {
   session: string;
+  /** The model that wrote the newest answer, if any. */
+  model: string | undefined;
   status: ConnectionStatus;
   toolsOpen: boolean;
   onToggleTools: () => void;
@@ -159,7 +163,9 @@ function Header({
             <BrainIcon size={20} weight="bold" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">Pi harness</h1>
+            <h1 className="truncate text-base font-semibold">
+              D1Agents · Pi Durable
+            </h1>
             <p className="truncate text-xs text-kumo-subtle">
               Session <code>{session.slice(0, 8)}</code>
             </p>
@@ -167,7 +173,7 @@ function Header({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Badge variant="secondary" className="hidden sm:inline-flex">
-            {MODEL.split("/").at(-1)}
+            {model ? model.split("/").at(-1) : "auto · d1.1"}
           </Badge>
           <Badge variant={status === "open" ? "success" : "secondary"}>
             {CONNECTION_LABELS[status]}
@@ -224,6 +230,19 @@ function EmptyState({
       </div>
     </div>
   );
+}
+
+/**
+ * The model that wrote the newest answer: the DecisionModel picks it per
+ * request.
+ */
+function lastModel(messages: PiSession["messages"]): string | undefined {
+  for (const message of [...messages].reverse()) {
+    if (message.role === "assistant" && "model" in message && message.model) {
+      return message.model;
+    }
+  }
+  return undefined;
 }
 
 /** What a run is doing before the model streams anything. */
@@ -334,8 +353,6 @@ function useTranscriptScroll({
     }
   };
 }
-
-type PiSession = ReturnType<typeof usePiSession>;
 
 function LoadEarlierButton({
   loading,
@@ -540,6 +557,7 @@ export function App() {
       <section className="flex min-h-0 min-w-0 flex-col" aria-label="Chat">
         <Header
           session={session}
+          model={lastModel(view.messages)}
           status={view.status}
           toolsOpen={toolsOpen}
           onToggleTools={() => setToolsOpen((open) => !open)}

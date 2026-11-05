@@ -5,6 +5,8 @@
   "compatibility_date": "2026-11-05",
   "compatibility_flags": ["nodejs_compat"],
   "ai": { "binding": "AI", "remote": true },
+  // The AI Gateway that holds the OpenRouter key (BYOK).
+  "vars": { "AI_GATEWAY_ID": "d1agents" },
   // `exec` runs JavaScript in Dynamic Workers minted through this.
   "worker_loaders": [{ "binding": "LOADER" }],
   "assets": {
