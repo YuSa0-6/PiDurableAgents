@@ -33,7 +33,6 @@ import { usePiSession } from "./use-pi-session";
 import "./styles.css";
 
 const SESSION_KEY = "pi-harness-session";
-const MODEL = "@cf/zai-org/glm-5.3-flash";
 /** How close to the bottom (px) still counts as "at the bottom". */
 const BOTTOM_THRESHOLD = 32;
 
@@ -513,6 +512,14 @@ function App() {
   };
 
   const empty = messages.length === 0 && !earlier && !live && !running;
+  // The model that wrote the newest answer: the DecisionModel picks it per request.
+  const lastModel = [...messages]
+    .reverse()
+    .flatMap((message) =>
+      message.role === "assistant" && "model" in message && message.model
+        ? [message.model]
+        : []
+    )[0];
 
   return (
     <div
@@ -530,7 +537,7 @@ function App() {
                 <BrainIcon size={20} weight="bold" />
               </div>
               <div className="min-w-0">
-                <h1 className="truncate text-base font-semibold">Pi harness</h1>
+                <h1 className="truncate text-base font-semibold">D1Agents · Pi Durable</h1>
                 <p className="truncate text-xs text-kumo-subtle">
                   Session <code>{session.slice(0, 8)}</code>
                 </p>
@@ -538,7 +545,7 @@ function App() {
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <Badge variant="secondary" className="hidden sm:inline-flex">
-                {MODEL.split("/").at(-1)}
+                {lastModel ? lastModel.split("/").at(-1) : "auto · d1.1"}
               </Badge>
               <Badge variant={connected ? "success" : "secondary"}>
                 {connected

@@ -51,6 +51,8 @@ export type PiMessage =
       readonly timestamp: number;
       readonly stopReason?: string;
       readonly error?: string;
+      /** For an assistant message: the model that wrote it. */
+      readonly model?: string;
     }
   | {
       readonly id: string;
@@ -106,6 +108,7 @@ export function projectMessage(message: Message, id: string): PiMessage {
         parts: assistantParts(message.content),
         timestamp: message.timestamp,
         stopReason: message.stopReason,
+        ...(message.model ? { model: message.model } : {}),
         ...(message.errorMessage === undefined
           ? {}
           : { error: message.errorMessage })

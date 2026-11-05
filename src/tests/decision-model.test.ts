@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { decide, POLICY, type RouterEvent } from "../decision-model";
+import {
+  decide,
+  DECISION_MODEL,
+  type DecisionEnv,
+  type RouterEvent
+} from "../decision-model";
+import { DEFAULT_MODEL, EXECUTION_MODELS } from "../models";
 
 function event(text: string): RouterEvent {
   return {
@@ -12,46 +18,80 @@ function event(text: string): RouterEvent {
   };
 }
 
-/** A fake AI binding that answers the classifier with a fixed reply. */
-function fakeAI(response: string): Ai {
-  return { run: async () => ({ response }) } as unknown as Ai;
+type Call = { provider: string; endpoint: string; query: Record<string, unknown> };
+
+/** A fake AI binding whose gateway answers like OpenRouter's decisions API. */
+function fakeEnv(answer: () => Response): { env: DecisionEnv; calls: Call[] } {
+  const calls: Call[] = [];
+  const ai = {
+    gateway: () => ({
+      run: async (request: Call) => {
+        calls.push(request);
+        return answer();
+      }
+    })
+  } as unknown as Ai;
+  return { env: { AI: ai, AI_GATEWAY_ID: "test-gateway" }, calls };
 }
 
-const unused = fakeAI("unused");
+function choice(model: string, confidence: number): Response {
+  return Response.json({
+    model: "liquid/d1.1-20261027",
+    answers: {
+      model: { type: "choice", choice: model, probabilities: { [model]: confidence }, confidence }
+    },
+    usage: { input_tokens: 90, output_tokens: 0, cost: 0.0000018 }
+  });
+}
 
 describe("DecisionModel", () => {
-  it("rejects empty text at the guardrail", async () => {
-    const d = await decide(unused, event("   "));
-    expect(d.action).toBe("reject");
-    expect(d.decidedBy).toBe("guardrail");
+  it("rejects empty text at the guardrail without calling d1.1", async () => {
+    const { env, calls } = fakeEnv(() => choice("z-ai/glm-5.3", 0.9));
+    const d = await decide(env, event("   "));
+    expect(d).toMatchObject({ action: "reject", decidedBy: "guardrail" });
+    expect(calls).toHaveLength(0);
   });
 
-  it("routes file work to the workspace policy by rules", async () => {
-    const d = await decide(unused, event("/workspace/haiku.txt にファイルを書いて保存して"));
-    expect(d).toMatchObject({ action: "llm", intent: "workspace", decidedBy: "rules" });
-    expect(d.model).toBe(POLICY.workspace.model);
+  it("asks d1.1 a choice question over the execution models", async () => {
+    const { env, calls } = fakeEnv(() => choice("qwen/qwen3.8-max-0902", 0.95));
+    const d = await decide(env, event("Compare these two architectures"));
+    expect(d).toMatchObject({
+      action: "llm",
+      model: "qwen/qwen3.8-max-0902",
+      decidedBy: "d1.1",
+      confidence: 0.95,
+      costUsd: 0.0000018
+    });
+    expect(calls[0]).toMatchObject({ provider: "openrouter", endpoint: "../alpha/decisions" });
+    const query = calls[0].query as {
+      model: string;
+      questions: { model: { type: string; criteria: Record<string, string> } };
+    };
+    expect(query.model).toBe(DECISION_MODEL);
+    expect(query.questions.model.type).toBe("choice");
+    expect(Object.keys(query.questions.model.criteria)).toEqual(
+      EXECUTION_MODELS.map((model) => model.id)
+    );
   });
 
-  it("routes design questions to the analysis policy by rules", async () => {
-    const d = await decide(unused, event("この2つのアーキテクチャを比較して設計のメリットを分析して"));
-    expect(d).toMatchObject({ intent: "analysis", decidedBy: "rules" });
-    expect(d.model).toBe(POLICY.analysis.model);
+  it("falls back when d1.1 is unsure", async () => {
+    const { env } = fakeEnv(() => choice("deepseek/deepseek-v4.1-flash", 0.2));
+    const d = await decide(env, event("hmm"));
+    expect(d).toMatchObject({ decidedBy: "fallback", model: DEFAULT_MODEL });
   });
 
-  it("treats short text without keywords as chat", async () => {
-    const d = await decide(unused, event("こんにちは"));
-    expect(d).toMatchObject({ intent: "chat", decidedBy: "rules" });
+  it("falls back when d1.1 picks a model outside the pool", async () => {
+    const { env } = fakeEnv(() => choice("someone/else", 0.99));
+    const d = await decide(env, event("hello"));
+    expect(d).toMatchObject({ decidedBy: "fallback", model: DEFAULT_MODEL });
   });
 
-  it("asks the classifier when the rules cannot decide", async () => {
-    const text = "I would like some help thinking about my weekend, there are many things going on lately";
-    const d = await decide(fakeAI('{"intent":"analysis","confidence":0.7}'), event(text));
-    expect(d).toMatchObject({ intent: "analysis", decidedBy: "classifier", confidence: 0.7 });
-  });
-
-  it("falls back to chat when the classifier answers nonsense", async () => {
-    const text = "I would like some help thinking about my weekend, there are many things going on lately";
-    const d = await decide(fakeAI("no idea"), event(text));
-    expect(d).toMatchObject({ intent: "chat", decidedBy: "fallback" });
+  it("falls back when the gateway answers an error", async () => {
+    const { env } = fakeEnv(() =>
+      Response.json({ error: { message: "Not Found" } }, { status: 404 })
+    );
+    const d = await decide(env, event("hello"));
+    expect(d).toMatchObject({ action: "llm", decidedBy: "fallback", model: DEFAULT_MODEL });
+    expect(d.reasons.join(" ")).toContain("404");
   });
 });

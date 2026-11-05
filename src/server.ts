@@ -6,16 +6,20 @@ import { createGitModule } from "@cloudflare/computer/modules/git";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import type { UserInput } from "@earendil-works/pi-durable";
-import { PiHarness, type PiSessionId } from "agents/harness/pi";
+import { PiHarness, type PiModel, type PiSessionId } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
 import { WebSockets } from "agents/websockets";
 import { decide, type Decision, type RouterEvent } from "./decision-model";
 import { app } from "./router";
+import {
+  DEFAULT_MODEL,
+  executionModels,
+  gatewayOpenRouterProvider
+} from "./models";
 import { PiSessionSockets } from "./sockets";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "./workspace";
 
-const MODEL_ID = "@cf/zai-org/glm-5.3-flash";
 
 const PREAMBLE =
   "You are a concise assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language. You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there, and run JavaScript modules in it with exec, which can also use git. Paths are absolute. Use tools whenever they can answer the request, and explain their results plainly.";
@@ -23,7 +27,11 @@ const PREAMBLE =
 /** Playable pi session backed by one Durable Object. */
 export class PiAgent extends DurableObject<Env> {
   // Workers AI and AI Gateway over the AI binding, as a pi-ai provider.
-  readonly ai = createAI({ binding: this.env.AI });
+  // Workers AI and AI Gateway over the AI binding. The gateway holds the
+  // OpenRouter key (BYOK), so the Worker has none.
+  readonly ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
+  // The execution models (OpenRouter), as pi-ai model objects.
+  readonly executionModels = executionModels();
   // A durable filesystem on the object's SQLite, beside pi's own tables.
   // `exec` runs JavaScript modules in a fresh Dynamic Worker per call, with
   // no network of its own. `git` turns on `workspace.git`, which the `codemode:git`
@@ -52,6 +60,8 @@ export class PiAgent extends DurableObject<Env> {
       });
       const models = createModels();
       models.setProvider(this.ai.provider);
+      // OpenRouter models, streamed through the gateway.
+      models.setProvider(gatewayOpenRouterProvider(this.ai, this.executionModels));
       return Harness.open(
         storage,
         {
@@ -68,7 +78,7 @@ export class PiAgent extends DurableObject<Env> {
         context
       );
     },
-    defaults: { model: this.ai(MODEL_ID), thinkingLevel: "low" }
+    defaults: { model: this.#model(DEFAULT_MODEL), thinkingLevel: "low" }
   });
 
   // App glue, not the harness: how this app puts sessions on a socket.
@@ -110,7 +120,6 @@ export class PiAgent extends DurableObject<Env> {
         data: {
           source: event.source,
           type: event.type,
-          intent: decision.intent,
           model: decision.model,
           decidedBy: decision.decidedBy
         }
@@ -165,7 +174,7 @@ export class PiAgent extends DurableObject<Env> {
       session,
       receivedAt: new Date().toISOString()
     };
-    const decision = await decide(this.env.AI, event);
+    const decision = await decide(this.env, event);
     this.#log(event, decision);
     if (decision.action === "reject") {
       throw new Error(`DecisionModel rejected the input: ${decision.reasons.join("; ")}`);
@@ -175,9 +184,16 @@ export class PiAgent extends DurableObject<Env> {
 
   readonly #models = new Map<PiSessionId, string>();
 
+  /** The pi-ai model object for an execution model id. */
+  #model(id: string): PiModel {
+    const model = this.executionModels.find((candidate) => candidate.id === id);
+    if (!model) throw new Error(`Unknown execution model ${id}`);
+    return model;
+  }
+
   async #applyModel(session: PiSessionId, decision: Decision): Promise<void> {
     if (this.#models.get(session) === decision.model) return;
-    await this.harness.session(session).setModel(this.ai(decision.model));
+    await this.harness.session(session).setModel(this.#model(decision.model));
     this.#models.set(session, decision.model);
   }
 

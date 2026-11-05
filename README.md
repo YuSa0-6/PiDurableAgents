@@ -1,7 +1,7 @@
 # D1Agents: Pi Durable Agent on Cloudflare
 
 Cloudflare Agents SDK の `PiHarness`（Pi Durable）を使ったエージェントです。
-すべてのリクエストは **Event Router（Hono）** から入り、**DecisionModel** が使う LLM を決め、**Pi Durable Agent** が答えます。
+すべてのリクエストは **Event Router（Hono）** から入ります。**DecisionModel（Liquid d1.1）** が依頼の内容に合う実行モデルを選び、**Pi Durable Agent** がそのモデルで答えます。モデルはすべて OpenRouter のものを Cloudflare AI Gateway 経由で呼びます。
 
 - デプロイ先: https://d1agents-pi-durable.itumens.workers.dev
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
@@ -15,46 +15,78 @@ Cloudflare Agents SDK の `PiHarness`（Pi Durable）を使ったエージェン
 flowchart LR
   A[HTTP / Webhook<br>POST /api/events] --> R[Event Router<br>Hono]
   B[ブラウザ UI<br>WebSocket] --> R
-  R --> D{DecisionModel}
-  D -- reject --> X[422 を返す]
-  D -- llm --> P[PiAgent<br>Durable Object + Pi Durable]
-  P --> L1["@cf/zai-org/glm-5.3-flash"]
-  P --> L2["@cf/zai-org/glm-5.3"]
+  R --> G{ガードレール}
+  G -- reject --> X[422 を返す]
+  G --> D[DecisionModel<br>liquid/d1.1]
+  D -- 選んだモデル --> P[PiAgent<br>Durable Object + Pi Durable]
+  P --> GW[Cloudflare AI Gateway<br>d1agents]
+  GW --> OR[OpenRouter]
   P --> T[Workspace ツール<br>read / write / exec / git]
 ```
 
 | 層 | ファイル | 役割 |
 | --- | --- | --- |
 | Event Router | `src/router.ts` | Hono で HTTP を受け、イベントの形にそろえる |
-| DecisionModel | `src/decision-model.ts` | イベントの意図を判定し、使う LLM を決める |
-| PiAgent | `src/server.ts` | Pi Durable を動かす Durable Object。判定結果のモデルを設定して回答する |
+| DecisionModel | `src/decision-model.ts` | ガードレールのあと、d1.1 に実行モデルを選ばせる |
+| 実行モデル一覧 | `src/models.ts` | 候補モデルと、d1.1 に渡す判断基準（`criteria`） |
+| PiAgent | `src/server.ts` | Pi Durable を動かす Durable Object。選ばれたモデルに切り替えて回答する |
 | UI 配信（フォールバック） | `scripts/embed-ui.mjs` | UI を Worker に埋め込んで配信する（後述） |
 
 ## DecisionModel の判定手順
 
-上から順に試し、最初に決まった段階で終わります。
-
 | 順番 | 段階 | 内容 | `decidedBy` |
 | --- | --- | --- | --- |
-| 1 | ガードレール | 空文字、8000 文字超、禁止パターンは `reject` | `guardrail` |
-| 2 | キーワードルール | 日本語・英語のキーワードで `workspace` / `analysis` を採点し、はっきり勝った方に決める。40 文字以下でキーワードなしは `chat` | `rules` |
-| 3 | 小型 LLM 分類器 | `@cf/meta/llama-3.2-3b-instruct` に JSON で意図を答えさせる（5 秒で打ち切り） | `classifier` |
-| 4 | フォールバック | 上で決まらなければ `chat` | `fallback` |
+| 1 | ガードレール | 空文字、8000 文字超、禁止パターンは `reject`（d1.1 は呼ばない） | `guardrail` |
+| 2 | Liquid d1.1 | 依頼文を `state` として渡し、`choice` 型の質問で実行モデルを 1 つ選ばせる | `d1.1` |
+| 3 | フォールバック | d1.1 の失敗、確信度 0.4 未満、候補外の答えのときは既定モデル（`z-ai/glm-5.3`） | `fallback` |
+| ー | 手動指定 | `/api/events` に `model` を付けると d1.1 を飛ばしてそのモデルを使う | `override` |
 
-意図ごとに使う LLM（`POLICY` を書き換えると変更できます）:
+d1.1 は会話をしない「判定専用」のモデルです。1 回あたり約 0.0000018〜0.0000038 ドル、0.3〜1 秒で答え、候補ごとの確率も返します。
 
-| 意図 | 例 | LLM |
+| 項目 | 内容 |
+| --- | --- |
+| 呼び先 | OpenRouter の `/api/alpha/decisions`（alpha 版） |
+| AI Gateway での指定 | provider `openrouter`、endpoint `../alpha/decisions`（Gateway の OpenRouter は `/api/v1` が起点のため） |
+| 入力 | `state`（依頼文など）と `questions`（質問の型は `choice` / `score` / `noul`） |
+| 出力 | `choice`（選ばれたモデル）、`probabilities`、`confidence` |
+
+## 実行モデル
+
+d1.1 は下の「判断基準」を読んで選びます。`src/models.ts` の `EXECUTION_MODELS` を書き換えると候補を変えられます。料金は OpenRouter の 100 万トークンあたり（入力 / 出力）です。
+
+| モデル | 判断基準（要約） | 料金 |
 | --- | --- | --- |
-| `chat` | 短い質問、雑談 | `@cf/zai-org/glm-5.3-flash` |
-| `workspace` | ファイル操作、コード実行、git | `@cf/zai-org/glm-5.3-flash`（ツールあり） |
-| `analysis` | 比較、設計、分析 | `@cf/zai-org/glm-5.3` |
+| `deepseek/deepseek-v4.1-flash` | あいさつ、短い質問、簡単な計算 | $0.04 / $0.50 |
+| `z-ai/glm-5.3`（既定） | ファイル操作、コード実行、git、複数手順のツール作業 | $0.07 / $1.40 |
+| `google/gemini-3.8-flash` | 要約、説明、中くらいの難しさの混合タスク | $0.83 / $4.12 |
+| `qwen/qwen3.8-max-0902` | 設計判断、比較、トレードオフ分析 | $2.00 / $6.00 |
+| `tencent/hy4` | 文書作成、情報整理、ビジネス文書 | $0.42 / $1.25 |
+
+実際に試したときの振り分け:
+
+| 依頼 | 選ばれたモデル | 確信度 |
+| --- | --- | --- |
+| おはよう！ | DeepSeek V4.1 Flash | 0.99 |
+| exec でファイルを書いて読み返す | GLM 5.3 | 0.46 |
+| RDB とドキュメント DB の設計判断 | Qwen3.8 Max | 0.85 |
+
+### OpenRouter の呼び方
+
+| 項目 | 内容 |
+| --- | --- |
+| API キー | AI Gateway `d1agents` の Provider Keys に登録（BYOK）。Worker はキーを持たない |
+| Gateway の指定 | `wrangler.jsonc` の `vars.AI_GATEWAY_ID` |
+| Pi への登録 | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
+| モデル情報 | pi-ai の OpenRouter カタログから取得。カタログにない `tencent/hy4` は `hy4-preview` を元に料金だけ差し替え |
+
+Gemini は再帰する JSON スキーマを受け付けません。そのため `exec` ツールの `input` は「任意のオブジェクト」として渡しています（`src/workspace.ts`）。
 
 ## API
 
 | メソッド | パス | 内容 |
 | --- | --- | --- |
-| GET | `/api/health` | 動作確認と、今のルーティング表 |
-| POST | `/api/decide` | DecisionModel だけを実行（LLM は呼ばない） |
+| GET | `/api/health` | 動作確認と、実行モデル一覧 |
+| POST | `/api/decide` | DecisionModel だけを実行（実行モデルは呼ばない） |
 | POST | `/api/events` | Router → DecisionModel → Pi → LLM の全体を実行 |
 | GET | `/api/sessions/:id/decisions` | そのセッションの判定ログ（新しい順） |
 | GET | `/agents/pi-agent/:id` | ブラウザ UI 用の WebSocket |
@@ -68,6 +100,7 @@ flowchart LR
 | `id` | いいえ | ランダム | 冪等キー。同じ id は 1 回だけ処理される |
 | `source` / `type` | いいえ | `http` / `message` | イベントの出どころ。会話ログに残る |
 | `wait` | いいえ | `true` | `false` で受け付けだけ返し、回答はバックグラウンドで進む |
+| `model` | いいえ | なし | 実行モデルの ID。指定すると d1.1 を飛ばしてそのモデルで答える |
 
 ### 試す
 
@@ -83,13 +116,21 @@ LLM まで通す:
 curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
 ```
 
+モデルを指定して試す（d1.1 を飛ばす）:
+
+```bash
+curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H 'content-type: application/json' -d '{"session":"demo","model":"tencent/hy4","text":"勉強会の案内文を書いて"}'
+```
+
 判定ログを見る:
 
 ```bash
 curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisions
 ```
 
-ブラウザ UI で送ったメッセージも同じ DecisionModel を通り、`source: "websocket"` として記録されます。
+ブラウザ UI で送ったメッセージも同じ DecisionModel を通り、`source: "websocket"` として記録されます。UI 右上のバッジには、直近の回答を書いたモデルが出ます。
+
+どのモデルが実際に答えたかは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログでも確認できます。
 
 ## ツールチェーン
 
@@ -113,7 +154,7 @@ pnpm install
 pnpm start
 ```
 
-Workers AI はリモートのバインディングを使うため、`wrangler login` が必要です。
+`AI` バインディングはリモートで動かすため、`wrangler login` が必要です。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
 
 ## デプロイ
 
@@ -143,7 +184,7 @@ UI を小さくするため、コードのシンタックスハイライト（`@
 | 項目 | 元のサンプル | このリポジトリ |
 | --- | --- | --- |
 | 入口 | `fetch` 関数で直接振り分け | Hono の Event Router |
-| モデル選択 | 固定（`glm-5.3-flash`） | DecisionModel が毎回決める |
+| モデル選択 | 固定（Workers AI `glm-5.3-flash`） | d1.1 が毎回 OpenRouter の 5 モデルから選ぶ |
 | HTTP からの利用 | なし | `POST /api/events` |
 | 判定ログ | なし | Durable Object の SQLite に `router_decisions` テーブル |
 | ビルド | Vite | Vite+ |

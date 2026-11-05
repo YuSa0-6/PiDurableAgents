@@ -3,16 +3,22 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import {
-  CLASSIFIER_MODEL,
+  DECISION_MODEL,
   decide,
-  POLICY,
+  MIN_CONFIDENCE,
   type RouterEvent
 } from "./decision-model";
+import {
+  DEFAULT_MODEL,
+  EXECUTION_MODELS,
+  isExecutionModel,
+  type ExecutionModelId
+} from "./models";
 
 /**
  * Event Router (Hono): the entry point for every event.
  *
- *   HTTP / webhook ──▶ Event Router ──▶ DecisionModel ──▶ PiAgent (Pi Durable) ──▶ LLM
+ *   HTTP / webhook ──▶ Event Router ──▶ DecisionModel (d1.1) ──▶ PiAgent (Pi Durable) ──▶ OpenRouter LLM
  *   Browser chat   ──▶ /agents/pi-agent/<session> (WebSocket) ──▶ same DecisionModel hook
  *
  * | Method | Path                          | What it does                                  |
@@ -34,6 +40,8 @@ type EventBody = {
   readonly id?: unknown;
   /** Default true: wait for the answer. False: return once Pi has the event. */
   readonly wait?: unknown;
+  /** An execution model id to use instead of asking the DecisionModel. */
+  readonly model?: unknown;
 };
 
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -65,6 +73,16 @@ export function normalise(body: EventBody): RouterEvent {
   };
 }
 
+function override(body: EventBody): ExecutionModelId | undefined {
+  if (body.model === undefined) return undefined;
+  if (typeof body.model !== "string" || !isExecutionModel(body.model)) {
+    throw badRequest(
+      `model must be one of: ${EXECUTION_MODELS.map((model) => model.id).join(", ")}`
+    );
+  }
+  return body.model;
+}
+
 async function readJson(request: Request): Promise<EventBody> {
   try {
     const body: unknown = await request.json();
@@ -82,9 +100,11 @@ app.use("/api/*", cors());
 app.get("/api/health", (c) =>
   c.json({
     ok: true,
-    flow: "Event Router (Hono) → DecisionModel → PiAgent (Pi Durable) → LLM",
-    classifier: CLASSIFIER_MODEL,
-    policy: POLICY
+    flow: "Event Router (Hono) → DecisionModel (Liquid d1.1) → PiAgent (Pi Durable) → OpenRouter LLM",
+    decisionModel: DECISION_MODEL,
+    minConfidence: MIN_CONFIDENCE,
+    defaultModel: DEFAULT_MODEL,
+    executionModels: EXECUTION_MODELS
   })
 );
 
@@ -92,14 +112,15 @@ app.get("/api/health", (c) =>
 app.get("/api/session", (c) => c.json({ session: crypto.randomUUID() }));
 
 app.post("/api/decide", async (c) => {
-  const event = normalise(await readJson(c.req.raw));
-  return c.json({ event, decision: await decide(c.env.AI, event) });
+  const body = await readJson(c.req.raw);
+  const event = normalise(body);
+  return c.json({ event, decision: await decide(c.env, event, override(body)) });
 });
 
 app.post("/api/events", async (c) => {
   const body = await readJson(c.req.raw);
   const event = normalise(body);
-  const decision = await decide(c.env.AI, event);
+  const decision = await decide(c.env, event, override(body));
   if (decision.action === "reject") {
     return c.json({ event, decision }, 422);
   }

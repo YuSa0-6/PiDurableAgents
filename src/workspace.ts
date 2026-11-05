@@ -71,17 +71,29 @@ const COMMAND_DESCRIPTION =
 function describeExec(tool: PiTool): PiTool {
   const properties = tool.parameters.properties ?? {};
   const command = properties.command;
+  // `input` is any JSON object. computer describes "any JSON value" with a
+  // recursive `definitions` entry, which Gemini rejects ("ref loops ... of
+  // required fields"). A plain object with any properties means the same to
+  // the model and has no recursion.
+  const { definitions: _definitions, ...parameters } = tool.parameters as typeof tool.parameters & {
+    definitions?: unknown;
+  };
   return {
     ...tool,
     description: EXEC_DESCRIPTION,
     parameters: {
-      ...tool.parameters,
+      ...parameters,
       properties: {
         ...properties,
         command:
           typeof command === "object" && command !== null
             ? { ...command, description: COMMAND_DESCRIPTION }
-            : command
+            : command,
+        input: {
+          description: "Input object handed to the module.",
+          type: "object",
+          additionalProperties: true
+        }
       }
     }
   };
