@@ -99,9 +99,17 @@ curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisi
 | Hono | Event Router | `src/router.ts` |
 | `cf` CLI | Cloudflare リソースの確認・操作 | `pnpm exec cf cli search "<やりたいこと>"` |
 | Wrangler | デプロイ | `pnpm run deploy` |
-| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test` |
+| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test:workers` |
+| Vitest 5（Vite+ 経由）+ happy-dom + Testing Library | React UI のテスト | `pnpm test:ui` |
 
-テストは `vp test` で動かします。Workers ランタイム上で実行するために `@cloudflare/vitest-plugin`（旧 `@cloudflare/vitest-pool-workers`）を使います。
+テストは `vp test` で動かします。`pnpm test` は次の 2 つを順に実行します。
+
+| スイート | 設定ファイル | 実行環境 | 対象 |
+| --- | --- | --- | --- |
+| Workers | `src/tests/vitest.config.ts` | Workers ランタイム（`@cloudflare/vitest-plugin`、旧 `@cloudflare/vitest-pool-workers`） | `src/tests/*.test.ts` |
+| UI | `src/tests/ui/vitest.config.ts` | Node + happy-dom | `src/tests/ui/*.test.tsx` |
+
+UI のコンポーネントは `src/ui/` にあります。`src/client.tsx` はページに `<App />` を描画するだけの入口なので、テストは `src/ui/` を直接 import します。
 
 ## ローカルで動かす
 
