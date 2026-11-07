@@ -63,7 +63,7 @@ describe("the GitHub App key", () => {
   it("signs a JWT that the public key verifies, with GitHub's claims", async () => {
     const { pkcs1, publicKey } = await keyPair();
     const now = Date.UTC(2026, 10, 7, 12, 0, 0);
-    const app = new GitHubApp({ appId: "12345", installationId: "678", privateKey: pkcs1 }, fetch, () => now);
+    const app = new GitHubApp({ appId: "12345", installationId: "678", privateKey: pkcs1 }, undefined, () => now);
     const jwt = await app.jwt();
     expect(await verify(jwt, publicKey)).toBe(true);
     const [header, payload] = jwt.split(".").slice(0, 2).map(decodePart);

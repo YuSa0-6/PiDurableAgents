@@ -33,6 +33,16 @@ describe("the github extension's setup", () => {
     expect(parseRepos("")).toEqual([]);
   });
 
+  it("calls the real fetch the way workerd allows", async () => {
+    // A stored global fetch called as a method throws "Illegal invocation".
+    const setup = githubSetup(configured)!;
+    const error = await setup.fetch("http://127.0.0.1:1/").then(
+      () => undefined,
+      (reason: unknown) => String(reason)
+    );
+    expect(error ?? "").not.toMatch(/Illegal invocation/);
+  });
+
   it("keeps paths inside /workspace", () => {
     expect(workspacePath("/workspace/a/./b/")).toBe("/workspace/a/b");
     expect(() => workspacePath("/workspace/../etc")).toThrow();

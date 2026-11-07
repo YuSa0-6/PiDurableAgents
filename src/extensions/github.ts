@@ -6,6 +6,7 @@ import {
   GitHubApp,
   gitHeaders,
   githubHeaders,
+  globalFetch,
   type Fetch,
   type RepoRef
 } from "../github/app";
@@ -46,7 +47,7 @@ export type GitHubSetup = {
  * It also needs `API_TOKEN`: without API auth, anyone with the URL could
  * make the bot push.
  */
-export function githubSetup(env: GitHubEnv, fetchImpl: Fetch = fetch): GitHubSetup | undefined {
+export function githubSetup(env: GitHubEnv, fetchImpl: Fetch = globalFetch): GitHubSetup | undefined {
   const appId = env.GITHUB_APP_ID?.trim();
   const installationId = env.GITHUB_APP_INSTALLATION_ID?.trim();
   const privateKey = env.GITHUB_APP_PRIVATE_KEY;

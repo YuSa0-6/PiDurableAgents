@@ -21,6 +21,13 @@ export type RepoRef = { readonly owner: string; readonly name: string };
 
 export const GITHUB_API = "https://api.github.com";
 
+/**
+ * The global fetch, callable as a stored function. workerd throws "Illegal
+ * invocation" when the global fetch is called with another `this`, as
+ * `this.#fetch(...)` or `setup.fetch(...)` would.
+ */
+export const globalFetch: Fetch = (input, init) => fetch(input, init);
+
 /** What every installation token may do: push branches and open pull requests. */
 const TOKEN_PERMISSIONS = { contents: "write", pull_requests: "write" } as const;
 
@@ -48,7 +55,7 @@ export class GitHubApp {
   #key?: Promise<CryptoKey>;
   readonly #tokens = new Map<string, { token: string; expiresAt: number }>();
 
-  constructor(config: GitHubAppConfig, fetchImpl: Fetch = fetch, now: () => number = Date.now) {
+  constructor(config: GitHubAppConfig, fetchImpl: Fetch = globalFetch, now: () => number = Date.now) {
     this.#config = config;
     this.#fetch = fetchImpl;
     this.#now = now;
