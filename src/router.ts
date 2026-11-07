@@ -25,6 +25,9 @@ import {
  * | POST   | /api/decide                   | DecisionModel only (dry run, no answer)       |
  * | POST   | /api/events                   | Router → DecisionModel → Pi agent → LLM       |
  * | GET    | /api/sessions/:id/decisions   | The decisions a session's object has logged   |
+ *
+ * When the API_TOKEN secret is set, every route but /api/health needs
+ * `Authorization: Bearer <API_TOKEN>`.
  */
 
 /** The JSON body `/api/events` and `/api/decide` accept. */
@@ -93,9 +96,36 @@ export const app = new Hono<{ Bindings: Env }>();
 
 app.use("/api/*", cors());
 
+// Bearer auth for everything but the health check, once API_TOKEN is set.
+app.use("/api/*", async (c, next) => {
+  const expected = c.env.API_TOKEN;
+  if (!expected || c.req.path === "/api/health") return next();
+  const given = c.req.header("authorization")?.match(/^Bearer (.+)$/)?.[1] ?? "";
+  if (!(await sameSecret(given, expected))) {
+    return c.json({ error: "Unauthorized" }, 401, { "www-authenticate": "Bearer" });
+  }
+  return next();
+});
+
+/**
+ * Compare two secrets without leaking where they differ: compare their
+ * SHA-256 digests (same length whatever the input) byte by byte, without
+ * stopping early.
+ */
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [x, y] = await Promise.all(
+    [a, b].map(async (value) => new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))))
+  );
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
 app.get("/api/health", (c) =>
   c.json({
     ok: true,
+    auth: c.env.API_TOKEN ? "bearer" : "none",
     flow: "Event Router (Hono) → DecisionModel (Liquid d1.1) → PiAgent (Pi Durable) → OpenRouter LLM",
     decisionModel: DECISION_MODEL,
     minConfidence: MIN_CONFIDENCE,

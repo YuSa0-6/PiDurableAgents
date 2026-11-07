@@ -15,6 +15,7 @@ import {
   executionModels,
   gatewayOpenRouterProvider
 } from "./models";
+import { createGitHubExtension, githubSetup } from "./extensions/github";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "./workspace";
 
 const PREAMBLE =
@@ -45,6 +46,9 @@ export class PiAgent extends DurableObject<Env> {
     ]
   });
   readonly registry = createRegistry();
+  // GitHub App access, when configured (see wrangler.jsonc). One instance per
+  // object, so its installation tokens are cached between calls.
+  readonly github = githubSetup(this.env);
   readonly harness = new PiHarness({
     harness: async ({ storage, context, onWake }) => {
       // pi's own extension: the system prompt and the workspace tools.
@@ -53,6 +57,9 @@ export class PiAgent extends DurableObject<Env> {
         sections: [{ key: "preamble", render: () => PREAMBLE, tag: false }],
         tools: createWorkspaceTools(this.workspace)
       });
+      if (this.github) {
+        this.registry.install(createGitHubExtension(this.workspace, this.github));
+      }
       const models = createModels();
       models.setProvider(this.ai.provider);
       // OpenRouter models, streamed through the gateway.

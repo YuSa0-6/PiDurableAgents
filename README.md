@@ -96,6 +96,16 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 | POST | `/api/events` | Router → DecisionModel → Pi → LLM の全体を実行 |
 | GET | `/api/sessions/:id/decisions` | そのセッションの判定ログ（新しい順） |
 
+### 認証
+
+Worker の secret `API_TOKEN` を設定すると、`/api/health` 以外のすべての API に `Authorization: Bearer <API_TOKEN>` が必要になります。設定していないあいだは、誰でも呼べます（`/api/health` の `auth` が `none` になります）。
+
+```bash
+pnpm exec wrangler secret put API_TOKEN
+```
+
+GitHub に push するツールは、`API_TOKEN` が設定されているときだけ有効になります（後述）。
+
 `/api/events` の入力:
 
 | フィールド | 必須 | 既定値 | 説明 |
@@ -109,31 +119,88 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 
 ### 試す
 
+`API_TOKEN` を設定したあとは、手元の環境変数に同じ値を入れてから実行します。
+
+```bash
+export D1AGENTS_TOKEN='<API_TOKEN と同じ値>'
+```
+
 判定だけを見る:
 
 ```bash
-curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/decide -H 'content-type: application/json' -d '{"text":"マイクロサービスとモノリスを比較して"}'
+curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/decide -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"text":"マイクロサービスとモノリスを比較して"}'
 ```
 
 LLM まで通す:
 
 ```bash
-curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
+curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
 ```
 
 モデルを指定して試す（d1.1 を飛ばす）:
 
 ```bash
-curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H 'content-type: application/json' -d '{"session":"demo","model":"tencent/hy4","text":"勉強会の案内文を書いて"}'
+curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"session":"demo","model":"tencent/hy4","text":"勉強会の案内文を書いて"}'
 ```
 
 判定ログを見る:
 
 ```bash
-curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisions
+curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisions -H "authorization: Bearer $D1AGENTS_TOKEN"
 ```
 
 どのモデルが実際に答えたかは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログでも確認できます。
+
+## GitHub への push と PR 作成
+
+pi 拡張 `github`（`src/extensions/github.ts`）が、GitHub App の権限でリポジトリを clone し、ブランチを切って commit・push し、PR を作ります。
+
+| ツール | 内容 |
+| --- | --- |
+| `github_clone` | 許可したリポジトリを `/workspace` に clone する |
+| `git_branch` | `agent/` で始まるブランチを作って切り替える |
+| `git_commit` | 作業ツリーの変更をすべて commit する |
+| `git_push` | いまのブランチを、同じ名前のブランチに push する |
+| `create_pull_request` | draft の PR を作る。同じブランチの PR が開いていれば、それを返す |
+
+ツールの中で守る決まり（モデルの指示に関係なく守られます）:
+
+| 決まり | 内容 |
+| --- | --- |
+| リポジトリ | `GITHUB_REPOS` に書いたものだけ |
+| ブランチ | push できるのは `agent/` で始まるブランチだけ。force push、削除、別名のブランチへの push はできない |
+| トークン | 1 時間で切れるトークンを、対象のリポジトリと権限（contents と pull requests の書き込み）に絞って発行する。トークンはリクエストのヘッダーにだけ入れ、ワークスペース（`exec` から読める場所）やモデルへの出力には出さない |
+
+### 設定
+
+| 項目 | 置き場所 | 値 |
+| --- | --- | --- |
+| `GITHUB_APP_ID` | `wrangler.jsonc` の `vars` | App の設定画面の App ID |
+| `GITHUB_APP_INSTALLATION_ID` | `wrangler.jsonc` の `vars` | インストール後の URL の末尾の数字 |
+| `GITHUB_REPOS` | `wrangler.jsonc` の `vars` | push を許すリポジトリ（`owner/name` をカンマ区切り） |
+| `GITHUB_APP_PRIVATE_KEY` | Worker の secret | App の秘密鍵（ダウンロードした `.pem` をそのまま。PKCS#1 のままで読めます） |
+| `API_TOKEN` | Worker の secret | API の認証（上記） |
+
+この 5 つがそろうまで、GitHub のツールはモデルに出ません。
+
+```bash
+pnpm exec wrangler secret put GITHUB_APP_PRIVATE_KEY < d1agents-bot.private-key.pem
+```
+
+GitHub App の作り方:
+
+| 手順 | 場所・操作 | 設定 |
+| --- | --- | --- |
+| 1 | Settings → Developer settings → GitHub Apps → New GitHub App | 名前（例：`d1agents-bot`）、Homepage URL（リポジトリの URL） |
+| 2 | Webhook | 「Active」のチェックを外す |
+| 3 | Repository permissions | Contents：Read and write、Pull requests：Read and write、Metadata：Read-only |
+| 4 | Where can this GitHub App be installed? | Only on this account |
+| 5 | 作成後の画面 | Generate a private key（`.pem` がダウンロードされる） |
+| 6 | Install App | Only select repositories で、使うリポジトリだけを選ぶ |
+
+あわせて、リポジトリの `main` にブランチ保護（またはルールセット）を設定しておくと、ツールの決まりに不具合があっても GitHub 側で `main` への直接の push を止められます。
+
+Pi は会話を作った時点でツールの一覧を決めます。GitHub のツールを有効にする前に作った会話（`session`）では使えないので、新しい `session` 名で試してください。
 
 ## ツールチェーン
 
@@ -152,6 +219,9 @@ curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisi
 | `decision-model.test.ts` | ガードレールとフォールバックの判定 |
 | `workspace.test.ts` | Workspace ツールの結果がモデルに渡ること |
 | `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと |
+| `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
+| `github-app.test.ts` | GitHub App の鍵（PKCS#1 / PKCS#8）の読み込み、JWT の署名、トークンの絞り込みとキャッシュ |
+| `github-extension.test.ts` | branch・commit の動き、`agent/` 以外と許可外のリポジトリを断ること、PR 作成の重複防止、トークンが出力に出ないこと（GitHub は偽物の API で代用。実際の push はテストしていない） |
 
 ## ローカルで動かす
 

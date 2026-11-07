@@ -9,7 +9,7 @@
     "build": "vp build",
     "deploy": "vp build && wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "types": "wrangler types env.d.ts --include-runtime false",
+    "types": "wrangler types env.d.ts --include-runtime false --strict-vars false",
     "test": "pnpm test:workers",
     "test:workers": "vp test run --config src/tests/vitest.config.ts",
     "check": "vp check"

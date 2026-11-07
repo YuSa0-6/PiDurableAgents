@@ -62,7 +62,7 @@ export default async function () {
   return (await log({ dir: "/workspace/hello" })).map((c) => \`\${c.oid.slice(0, 7)} \${c.message.split("\\n")[0]}\`);
 }
 
-Prefer the read, write and edit tools for plain file changes.`;
+Prefer the read, write and edit tools for plain file changes. Pushing and pull requests are not possible from exec: use the git_push and create_pull_request tools when you have them.`;
 
 const COMMAND_DESCRIPTION =
   "ES module source to run. Default-export a function to receive `input` and return a result.";
