@@ -5,11 +5,11 @@
   "type": "module",
   "version": "0.0.0",
   "scripts": {
-    "start": "vp dev",
-    "build": "vp build",
-    "deploy": "vp build && wrangler deploy",
-    "typecheck": "tsc --noEmit",
-    "types": "wrangler types env.d.ts --include-runtime false --strict-vars false",
+    "start": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy",
+    "typecheck": "cf workers types && tsc --noEmit",
+    "types": "cf workers types",
     "test": "pnpm test:workers",
     "test:workers": "vp test run --config src/tests/vitest.config.ts",
     "check": "vp check"
@@ -28,9 +28,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.67.0",
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.12",
     "@cloudflare/vitest-plugin": "^1.6.0",
-    "@cloudflare/workers-types": "^5.20261014.1",
     "cf": "1.0.0-beta.27",
     "typescript": "^7.0.2",
     "vite": "catalog:",

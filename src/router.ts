@@ -7,6 +7,7 @@ import {
   MIN_CONFIDENCE,
   type RouterEvent
 } from "./decision-model";
+import type { PiAgent } from "./server";
 import {
   DEFAULT_MODEL,
   EXECUTION_MODELS,
@@ -92,6 +93,16 @@ async function readJson(request: Request): Promise<EventBody> {
   }
 }
 
+/**
+ * The PiAgent object for a session. cloudflare.config.ts names the class's
+ * Worker by string, and cf types a binding named that way without the
+ * class, so add the class here.
+ */
+function piAgent(env: Env, session: string): DurableObjectStub<PiAgent> {
+  const namespace = env.PiAgent as unknown as DurableObjectNamespace<PiAgent>;
+  return namespace.getByName(session);
+}
+
 export const app = new Hono<{ Bindings: Env }>();
 
 app.use("/api/*", cors());
@@ -147,7 +158,7 @@ app.post("/api/events", async (c) => {
   if (decision.action === "reject") {
     return c.json({ event, decision }, 422);
   }
-  const agent = c.env.PiAgent.getByName(event.session);
+  const agent = piAgent(c.env, event.session);
   const result = await agent.handleEvent(event, decision, body.wait !== false);
   return c.json({ event, decision, result });
 });
@@ -155,7 +166,7 @@ app.post("/api/events", async (c) => {
 app.get("/api/sessions/:id/decisions", async (c) => {
   const id = c.req.param("id");
   if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
-  const agent = c.env.PiAgent.getByName(id);
+  const agent = piAgent(c.env, id);
   return c.json({ decisions: await agent.decisions(50) });
 });
 

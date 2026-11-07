@@ -81,7 +81,7 @@ d1.1 は下の「判断基準」を読んで選びます。`src/models.ts` の `
 | 項目 | 内容 |
 | --- | --- |
 | API キー | AI Gateway `d1agents` の Provider Keys に登録（BYOK）。Worker はキーを持たない |
-| Gateway の指定 | `wrangler.jsonc` の `vars.AI_GATEWAY_ID` |
+| Gateway の指定 | `cloudflare.config.ts` の `AI_GATEWAY_ID` |
 | Pi への登録 | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
 | モデル情報 | pi-ai の OpenRouter カタログから取得。カタログにない `tencent/hy4` は `hy4-preview` を元に料金だけ差し替え |
 
@@ -101,8 +101,10 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 Worker の secret `API_TOKEN` を設定すると、`/api/health` 以外のすべての API に `Authorization: Bearer <API_TOKEN>` が必要になります。設定していないあいだは、誰でも呼べます（`/api/health` の `auth` が `none` になります）。
 
 ```bash
-pnpm exec wrangler secret put API_TOKEN
+pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
 ```
+
+`cf` は beta のため、secret を 1 つだけ登録するコマンドがまだありません。secret の登録だけは Wrangler を使います（設定ファイルを読まないので、`--name` で Worker 名を渡します）。
 
 GitHub に push するツールは、`API_TOKEN` が設定されているときだけ有効になります（後述）。
 
@@ -175,16 +177,16 @@ pi 拡張 `github`（`src/extensions/github.ts`）が、GitHub App の権限で�
 
 | 項目 | 置き場所 | 値 |
 | --- | --- | --- |
-| `GITHUB_APP_ID` | `wrangler.jsonc` の `vars` | App の設定画面の App ID |
-| `GITHUB_APP_INSTALLATION_ID` | `wrangler.jsonc` の `vars` | インストール後の URL の末尾の数字 |
-| `GITHUB_REPOS` | `wrangler.jsonc` の `vars` | push を許すリポジトリ（`owner/name` をカンマ区切り） |
+| `GITHUB_APP_ID` | `cloudflare.config.ts` の `env`（`bindings.text`） | App の設定画面の App ID |
+| `GITHUB_APP_INSTALLATION_ID` | `cloudflare.config.ts` の `env`（`bindings.text`） | インストール後の URL の末尾の数字 |
+| `GITHUB_REPOS` | `cloudflare.config.ts` の `env`（`bindings.text`） | push を許すリポジトリ（`owner/name` をカンマ区切り） |
 | `GITHUB_APP_PRIVATE_KEY` | Worker の secret | App の秘密鍵（ダウンロードした `.pem` をそのまま。PKCS#1 のままで読めます） |
 | `API_TOKEN` | Worker の secret | API の認証（上記） |
 
 この 5 つがそろうまで、GitHub のツールはモデルに出ません。
 
 ```bash
-pnpm exec wrangler secret put GITHUB_APP_PRIVATE_KEY < d1agents-bot.private-key.pem
+pnpm exec wrangler secret put GITHUB_APP_PRIVATE_KEY --name d1agents-pi-durable < d1agents-bot.private-key.pem
 ```
 
 GitHub App の作り方:
@@ -206,11 +208,22 @@ Pi は会話を作った時点でツールの一覧を決めます。GitHub の�
 
 | 道具 | 用途 | コマンド |
 | --- | --- | --- |
-| Vite+ (`vp`) | 開発サーバーとビルド | `pnpm start` / `pnpm build` |
+| `cf` CLI（beta） | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作 | `pnpm start` / `pnpm build` / `pnpm run deploy` / `pnpm types` |
+| Vite（Vite+ と Cloudflare Vite プラグイン beta） | `cf` が中で使うビルド | `vite.config.ts` |
 | Hono | Event Router | `src/router.ts` |
-| `cf` CLI | Cloudflare リソースの確認・操作 | `pnpm exec cf cli search "<やりたいこと>"` |
-| Wrangler | デプロイ | `pnpm run deploy` |
+| Wrangler | secret の登録（`cf` が未対応のため）と、テスト用の設定 | `pnpm exec wrangler secret put <名前> --name d1agents-pi-durable` |
 | Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test` |
+
+Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wrangler.jsonc` から `cf migrate` で移行しました。バインディングと実行環境の型は `cf` が `.cloudflare/types/` に生成します（`pnpm typecheck` が先に生成します）。
+
+| 項目 | 置き場所 |
+| --- | --- |
+| Worker 名、互換日、バインディング、Durable Object | `cloudflare.config.ts` |
+| ビルドの設定（プラグイン、依存の重複排除） | `vite.config.ts` |
+| 生成物（ビルド結果、型） | `.cloudflare/`（git には入れない） |
+| テスト用の Worker の設定 | `src/tests/wrangler.jsonc`（`@cloudflare/vitest-plugin` が読む） |
+
+`cf` に関係なく調べものをするときは `pnpm exec cf cli search "<やりたいこと>"` が使えます。
 
 テストは Workers ランタイムで動きます（設定は `src/tests/vitest.config.ts`）。`src/tests/worker.ts` は本番と同じ Pi Durable + Workspace の組み合わせを、pi-ai の faux モデルで動かすテスト用の Durable Object です。
 
@@ -233,7 +246,7 @@ pnpm install
 pnpm start
 ```
 
-起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` バインディングはリモートで動かすため、`wrangler login` が必要です。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
+起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` バインディングはリモートで動かすため、`cf auth login` でログインしておく必要があります（`cf` は Wrangler のログインを使いません）。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
 
 ## デプロイ
 
@@ -241,7 +254,13 @@ pnpm start
 pnpm run deploy
 ```
 
-Worker と Durable Object だけをデプロイします。静的ファイル（Static Assets）はありません。
+`cf deploy` がビルドしてからデプロイします。Worker と Durable Object だけで、静的ファイル（Static Assets）はありません。アップロードせずに中身だけ確かめるときは、次のコマンドを使います。
+
+```bash
+pnpm exec cf deploy --dry-run
+```
+
+ログを流して見る機能（`wrangler tail`）は `cf` にまだないので、`pnpm exec wrangler tail d1agents-pi-durable` を使います。
 
 ## 元のサンプルからの変更点
 
@@ -252,7 +271,7 @@ Worker と Durable Object だけをデプロイします。静的ファイル（
 | モデル選択 | 固定（Workers AI `glm-5.3-flash`） | d1.1 が毎回 OpenRouter の 5 モデルから選ぶ |
 | HTTP からの利用 | なし | `POST /api/events` |
 | 判定ログ | なし | Durable Object の SQLite に `router_decisions` テーブル |
-| ビルド | Vite | Vite+ |
+| ビルドとデプロイ | Vite と Wrangler | `cf` CLI（`cloudflare.config.ts`、中は Vite+） |
 | `agents` バージョン | `*`（monorepo 内） | `^0.33.0`（Pi 1.5 対応） |
 | `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`） |
 

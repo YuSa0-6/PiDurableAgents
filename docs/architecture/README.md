@@ -65,7 +65,7 @@ DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確
 | 本物の Linux | なし | Container で `npm install` / `npm test`（任意・費用あり） | 案 |
 | git | clone / status / diff / log | commit と push。GitHub の認証方法は未定 | 案 |
 | 品質の測定 | 単体テスト 8 件 | 評価ランナーで成功率・コスト・時間を記録。拡張のあり・なしも比べる | 案 |
-| デプロイ | 手元から `wrangler deploy` | 変えない | 済 |
+| デプロイ | 手元から `cf deploy`（`cloudflare.config.ts`） | 変えない | 済 |
 
 ## 図を作り直すとき
 

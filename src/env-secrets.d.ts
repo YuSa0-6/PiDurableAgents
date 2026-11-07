@@ -1,4 +1,5 @@
-// Secrets set with `wrangler secret put`, which `wrangler types` does not see.
+// Secrets set with `wrangler secret put --name d1agents-pi-durable`. They are not in
+// cloudflare.config.ts, so the types cf generates do not include them.
 // Both are optional: the API is open and the GitHub tools are off until they are set.
 interface Env {
   /** Bearer token every /api/* request except /api/health must carry. */

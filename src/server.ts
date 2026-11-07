@@ -46,7 +46,7 @@ export class PiAgent extends DurableObject<Env> {
     ]
   });
   readonly registry = createRegistry();
-  // GitHub App access, when configured (see wrangler.jsonc). One instance per
+  // GitHub App access, when configured (see cloudflare.config.ts). One instance per
   // object, so its installation tokens are cached between calls.
   readonly github = githubSetup(this.env);
   readonly harness = new PiHarness({
