@@ -30,7 +30,6 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 | 状態 | 意味 |
 | --- | --- |
 | 済 | もう動いている |
-| 決定 | やることは決まっている。中身はこれから決める |
 | 案 | 提案の段階。やるかどうか、やり方も含めて未定 |
 
 | 分野 | 現状 | 期待値 | 状態 |
@@ -38,13 +37,13 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 | 入口 | `curl` と Webhook（`POST /api/events`） | CLI（chat / send / log）と評価ランナーが同じ API を使う | 案 |
 | 認証 | なし（URL を知っていれば誰でも呼べる） | Bearer トークン。Worker の secret に置く | 案 |
 | API | `/api/events`、`/api/decide`、判定ログ | セッション単位の prompt / stream（SSE）/ messages / abort | 案 |
-| API 設計の進め方 | ー | 試作で Pi の実データを見てから、イベントの形を `docs/api.md` に決める | 決定 |
+| API 設計の進め方 | ー | 試作で Pi の実データを見てから、イベントの形を `docs/api.md` に決める | 案 |
 | モデル選択 | DecisionModel（ガード + d1.1）→ OpenRouter の 5 モデル | 変えない | 済 |
 | 会話の永続化 | Pi Durable が Durable Object の SQLite に保存 | 変えない | 済 |
 | ハーネスの制御 | 再実行してよいツールだけを指定 | 危険な操作のガード（`hook` / `wrapTool`）、コーディング向けの要約設定 | 案 |
 | 分担 | 1 つのエージェントだけ | 調査役などのサブエージェント | 案 |
 | ファイル操作 | read / write / edit / ls / find / grep | 変えない | 済 |
-| コード実行 | `exec`（JavaScript のみ、通信なし） | `exec` を順番に実行し、bash（`WorkerShellBackend`、just-bash）を足す | 案 |
+| コード実行 | `exec`（JavaScript のみ、通信なし） | `exec` を順番に実行し、bash（`WorkerShellBackend`、just-bash）を足す。bash も Dynamic Worker で動く。ライブラリ側ではまだ実験的な機能 | 案 |
 | 本物の Linux | なし | Container で `npm install` / `npm test`（任意・費用あり） | 案 |
 | git | clone / status / diff / log | commit と push。GitHub の認証方法は未定 | 案 |
 | 品質の測定 | 単体テスト 8 件 | 小さなコーディング課題で成功率・コスト・時間を記録 | 案 |
