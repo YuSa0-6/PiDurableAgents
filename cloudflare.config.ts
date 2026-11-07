@@ -1,6 +1,6 @@
 import { bindings, defineConfig, exports } from "cf/config";
-// Imported as the Worker, so binding types know PiAgent's RPC methods.
-import * as entrypoint from "./src/server.ts" with { type: "cf-worker" };
+// The Worker module, imported with cf-worker so cf checks its exports.
+import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 
 /**
  * The Worker's configuration for the cf CLI (`cf dev`, `cf build`, `cf deploy`).
@@ -24,13 +24,6 @@ export default defineConfig({
 		env: {
 			// The AI Gateway that holds the OpenRouter key (BYOK).
 			AI_GATEWAY_ID: bindings.text("d1agents"),
-			// GitHub App for the github extension (push and pull requests). The
-			// IDs are not secret. The tools stay off until the IDs, the
-			// GITHUB_APP_PRIVATE_KEY secret and the API_TOKEN secret are all set.
-			GITHUB_APP_ID: bindings.text(""),
-			GITHUB_APP_INSTALLATION_ID: bindings.text(""),
-			// Repositories the agent may push to, comma-separated owner/name.
-			GITHUB_REPOS: bindings.text("YuSa0-6/D1Agents"),
 			PiAgent: bindings.durableObject({
 				worker: "d1agents-pi-durable",
 				exportName: "PiAgent",

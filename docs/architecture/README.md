@@ -11,6 +11,8 @@ D1Agents の「いまの構成」と「目指す構成（案）」を並べた�
 
 HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネットワークなしでブラウザで開けます。PNG は HTML をそのまま撮ったものです。
 
+図は Cloudflare Artifacts に切り替える前に描いたものです（git の相手が GitHub になっています）。いまの構成は、下の 2 つの表のほうが正確です。
+
 ## 現状
 
 <picture>
@@ -36,9 +38,9 @@ pi の拡張は、ツール（`tools`）、システムプロンプトの段落�
 | 要約 | `beforeCompact` でコーディング向けに残すものを決める | pi 拡張 | 案 |
 | サブエージェント | `tools` と `tasks`。止まっても再開できる | pi 拡張 | 案 |
 | Code Mode | スクリプトから自分のツールをまとめて呼ぶ（`createCodemodeExtension`、QuickJS を Durable Object の中で動かす） | pi 拡張 | 済 |
-| Workspace ツール | いまの `playground` 拡張。bash と順番実行を足す | pi 拡張 | 済（bash と順番実行は案） |
+| Workspace ツール | `workspace` 拡張（システムプロンプトと Workspace ツール）。bash と順番実行を足す | pi 拡張 | 済（bash と順番実行は案） |
 | DecisionModel | 送る前に `session.setModel()` でモデルを切り替える。pi の割り込みには「この依頼だけモデルを変える」場所がないため | アプリ側 | 済 |
-| 認証・API・SSE | Pi は通信の方法を決めない設計 | アプリ側 | 案 |
+| 認証・API・SSE | Pi は通信の方法を決めない設計 | アプリ側 | 済（SSE は案） |
 | 保存先・起こす仕組み | `PiHarness` が SQLite と alarm を受け持つ | アプリ側 | 済 |
 
 DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確かめるものです。pi 拡張のガードは、Pi の中でツールを実行する直前に止めるものです。
@@ -55,16 +57,16 @@ DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確
 | 分野 | 現状 | 期待値 | 状態 |
 | --- | --- | --- | --- |
 | 入口 | `curl` と Webhook（`POST /api/events`） | CLI（chat / send / log）と評価ランナーが同じ API を使う | 案 |
-| 認証 | なし（URL を知っていれば誰でも呼べる） | Bearer トークン。Worker の secret に置く | 案 |
-| API | `/api/events`、`/api/decide`、判定ログ | セッション単位の prompt / stream（SSE）/ messages / abort | 案 |
+| 認証 | Bearer トークン（Worker の secret `API_TOKEN` を設定したとき） | 変えない | 済 |
+| API | `/api/events`、`/api/decide`、判定ログ、リポジトリの読み取りトークン | セッション単位の prompt / stream（SSE）/ messages / abort | 案 |
 | API 設計の進め方 | ー | 試作で Pi の実データを見てから、イベントの形を `docs/api.md` に決める | 案 |
 | モデル選択 | DecisionModel（入力チェック + d1.1）→ OpenRouter の 5 モデル | 変えない | 済 |
 | 会話の永続化 | Pi Durable が Durable Object の SQLite に保存 | 変えない | 済 |
-| pi 拡張 | `playground` だけ（プロンプトと Workspace ツール） | ガード・検証・要約・サブエージェントを拡張として足す | 案 |
+| pi 拡張 | `workspace`・`git`・`artifacts`・`codemode` | ガード・検証・要約・サブエージェントを拡張として足す | 案 |
 | ファイル操作 | read / write / edit / ls / find / grep | 変えない | 済 |
 | コード実行 | `exec`（JavaScript のみ、通信なし） | `exec` を順番に実行し、bash（`WorkerShellBackend`、just-bash）を足す。bash も Dynamic Worker で動く。ライブラリ側ではまだ実験的な機能 | 案 |
 | 本物の Linux | なし | Container で `npm install` / `npm test`（任意・費用あり） | 案 |
-| git | Artifacts（名前空間 `d1agents`）にセッションごとのリポジトリ。import・作成・branch・commit・`agent/` ブランチへの push | GitHub への反映（GitHub App は停止中） | 済（GitHub は案） |
+| git | Artifacts（名前空間 `d1agents`）にセッションごとのリポジトリ。import・作成・branch・commit・`agent/` ブランチへの push | GitHub への反映（GitHub App のコードは削除。必要ならコミット `2fce24f` から戻す） | 済（GitHub は案） |
 | 品質の測定 | 単体テスト 8 件 | 評価ランナーで成功率・コスト・時間を記録。拡張のあり・なしも比べる | 案 |
 | デプロイ | 手元から `cf deploy`（`cloudflare.config.ts`） | 変えない | 済 |
 

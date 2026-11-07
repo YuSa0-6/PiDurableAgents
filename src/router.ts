@@ -1,19 +1,14 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import {
-  DECISION_MODEL,
-  decide,
-  MIN_CONFIDENCE,
-  type RouterEvent
-} from "./decision-model";
-import type { PiAgent } from "./server";
+import type { PiAgent } from "./agent";
+import { DECISION_MODEL, decide, MIN_CONFIDENCE } from "./decision-model";
+import type { RouterEvent } from "./event";
 import {
   DEFAULT_MODEL,
   EXECUTION_MODELS,
   isExecutionModel,
   type ExecutionModelId
-} from "./models";
+} from "./execution-models";
 
 /**
  * Event Router (Hono): the entry point for every event.
@@ -95,18 +90,21 @@ async function readJson(request: Request): Promise<EventBody> {
 }
 
 /**
- * The PiAgent object for a session. cloudflare.config.ts names the class's
- * Worker by string, and cf types a binding named that way without the
- * class, so add the class here.
+ * The PiAgent object of a session. cf types a Durable Object binding whose
+ * Worker is named by string without the class, so add the class here.
  */
-function piAgent(env: Env, session: string): DurableObjectStub<PiAgent> {
-  const namespace = env.PiAgent as unknown as DurableObjectNamespace<PiAgent>;
-  return namespace.getByName(session);
+function agentOf(env: Env, session: string): DurableObjectStub<PiAgent> {
+  return (env.PiAgent as unknown as DurableObjectNamespace<PiAgent>).getByName(session);
+}
+
+/** The PiAgent object of the session named in the path. */
+function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent> {
+  const id = c.req.param("id") ?? "";
+  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
+  return agentOf(c.env, id);
 }
 
 export const app = new Hono<{ Bindings: Env }>();
-
-app.use("/api/*", cors());
 
 // Bearer auth for everything but the health check, once API_TOKEN is set.
 app.use("/api/*", async (c, next) => {
@@ -159,17 +157,14 @@ app.post("/api/events", async (c) => {
   if (decision.action === "reject") {
     return c.json({ event, decision }, 422);
   }
-  const agent = piAgent(c.env, event.session);
+  const agent = agentOf(c.env, event.session);
   const result = await agent.handleEvent(event, decision, body.wait !== false);
   return c.json({ event, decision, result });
 });
 
-app.get("/api/sessions/:id/decisions", async (c) => {
-  const id = c.req.param("id");
-  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
-  const agent = piAgent(c.env, id);
-  return c.json({ decisions: await agent.decisions(50) });
-});
+app.get("/api/sessions/:id/decisions", async (c) =>
+  c.json({ decisions: await sessionAgent(c).decisions(50) })
+);
 
 // Read access to the session's Artifacts repositories, so a person can
 // `git fetch` the agent's branches. It hands out tokens, so it needs API auth.
@@ -177,9 +172,7 @@ app.get("/api/sessions/:id/repos", async (c) => {
   if (!c.env.API_TOKEN) {
     return c.json({ error: "Set the API_TOKEN secret first: this route hands out read tokens." }, 403);
   }
-  const id = c.req.param("id");
-  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
-  return c.json({ repos: await piAgent(c.env, id).shareRepos() });
+  return c.json({ repos: await sessionAgent(c).shareRepos() });
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

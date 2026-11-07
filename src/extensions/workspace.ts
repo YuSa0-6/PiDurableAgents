@@ -4,7 +4,31 @@ import {
   type CreatePiToolsOptions,
   type PiTool
 } from "@cloudflare/computer/tools/pi-ai";
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { Extension, ToolRegistration } from "@earendil-works/pi-durable";
+
+/**
+ * pi extension: the agent's system prompt and its durable workspace.
+ *
+ * The tools are @cloudflare/computer's (`read`, `ls`, `find`, `grep`,
+ * `write`, `edit`, `delete`, `exec`), adapted to pi-durable below.
+ */
+
+const PREAMBLE = [
+  "You are a concise coding assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language.",
+  "You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there. Paths are absolute.",
+  "Two tools run code, for different jobs:",
+  "- exec runs a JavaScript module inside the workspace, with node:fs and git. Use it to compute over files.",
+  "- codemode runs a script that calls your other tools as tools.<name>(args). Use it to do many tool calls in one step, such as reading or searching many files, or a fixed sequence of tool calls.",
+  "Use tools whenever they can answer the request, and explain their results plainly."
+].join("\n");
+
+export function createWorkspaceExtension(workspace: Workspace): Extension {
+  return {
+    name: "workspace",
+    sections: [{ key: "preamble", render: () => PREAMBLE, tag: false }],
+    tools: createWorkspaceTools(workspace)
+  };
+}
 
 /** The id of the Workspace's one backend, which `exec` runs on. */
 export const JAVASCRIPT_BACKEND = "javascript";
@@ -62,7 +86,7 @@ export default async function () {
   return (await log({ dir: "/workspace/hello" })).map((c) => \`\${c.oid.slice(0, 7)} \${c.message.split("\\n")[0]}\`);
 }
 
-Prefer the read, write and edit tools for plain file changes. Pushing and pull requests are not possible from exec: use the git_push and create_pull_request tools when you have them.`;
+Prefer the read, write and edit tools for plain file changes. Pushing is not possible from exec: use the repo_push tool.`;
 
 const COMMAND_DESCRIPTION =
   "ES module source to run. Default-export a function to receive `input` and return a result.";
@@ -109,7 +133,7 @@ function describeExec(tool: PiTool): PiTool {
  * name. `execute` validates the arguments against the tool's schema and
  * reports failures as `isError` results rather than throwing.
  */
-export function createWorkspaceTools(
+function createWorkspaceTools(
   workspace: Workspace,
   options: Omit<CreatePiToolsOptions, "workspace" | "shell"> = {}
 ): ToolRegistration[] {

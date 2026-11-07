@@ -15,10 +15,11 @@ import {
   EXECUTION_MODELS,
   isExecutionModel,
   type ExecutionModelId
-} from "./models";
+} from "./execution-models";
+import type { RouterEvent } from "./event";
 
 /** Which step made the decision. */
-export type DecidedBy = "guardrail" | "d1.1" | "fallback" | "override";
+type DecidedBy = "guardrail" | "d1.1" | "fallback" | "override";
 
 export type Decision = {
   /** `llm`: hand the event to the Pi agent. `reject`: answer with an error. */
@@ -34,21 +35,6 @@ export type Decision = {
   /** What d1.1 cost, in USD. */
   readonly costUsd?: number;
   readonly latencyMs: number;
-};
-
-/** The event as the router normalised it. */
-export type RouterEvent = {
-  /** Idempotency key: the same id is answered once. */
-  readonly id: string;
-  /** Where the event came from, e.g. `http`, `webhook`. */
-  readonly source: string;
-  /** Free-form event type, e.g. `message`, `github.issue`. */
-  readonly type: string;
-  /** The text the agent should act on. */
-  readonly text: string;
-  /** The Durable Object (one Pi session per object) the event goes to. */
-  readonly session: string;
-  readonly receivedAt: string;
 };
 
 /** The decisions model, on OpenRouter. */

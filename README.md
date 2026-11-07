@@ -30,11 +30,20 @@ flowchart LR
 
 | 層 | ファイル | 役割 |
 | --- | --- | --- |
-| Event Router | `src/router.ts` | Hono で HTTP を受け、イベントの形にそろえる |
+| Worker の入口 | `src/index.ts` | すべてのリクエストを Event Router に渡し、PiAgent を公開する |
+| Event Router | `src/router.ts` | Hono で HTTP を受け、認証し、イベントの形にそろえる |
+| イベント | `src/event.ts` | Router がそろえたイベントの型 |
 | DecisionModel | `src/decision-model.ts` | ガードレールのあと、d1.1 に実行モデルを選ばせる |
-| 実行モデル一覧 | `src/models.ts` | 候補モデルと、d1.1 に渡す判断基準（`criteria`） |
-| PiAgent | `src/server.ts` | Pi Durable を動かす Durable Object。選ばれたモデルに切り替えて回答する |
-| Workspace ツール | `src/workspace.ts` | Durable Object の SQLite 上のファイル操作と、JavaScript 実行（`exec`） |
+| 実行モデル一覧 | `src/execution-models.ts` | 候補モデルと、d1.1 に渡す判断基準（`criteria`） |
+| PiAgent | `src/agent.ts` | Pi Durable を動かす Durable Object。選ばれたモデルに切り替えて回答する |
+| pi 拡張 | `src/extensions/` | モデルに見えるもの（システムプロンプトとツール）。下の表 |
+
+| pi 拡張 | ファイル | 中身 |
+| --- | --- | --- |
+| `workspace` | `src/extensions/workspace.ts` | システムプロンプトと、Durable Object の SQLite 上のファイル操作・JavaScript 実行（`exec`） |
+| `git` | `src/extensions/git.ts` | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など） |
+| `artifacts` | `src/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧） |
+| `codemode` | `src/extensions/codemode.ts` | スクリプトからツールをまとめて呼ぶ Code Mode |
 
 1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 
@@ -58,7 +67,7 @@ d1.1 は会話をしない「判定専用」のモデルです。1 回あたり�
 
 ## 実行モデル
 
-d1.1 は下の「判断基準」を読んで選びます。`src/models.ts` の `EXECUTION_MODELS` を書き換えると候補を変えられます。料金は OpenRouter の 100 万トークンあたり（入力 / 出力）です。
+d1.1 は下の「判断基準」を読んで選びます。`src/execution-models.ts` の `EXECUTION_MODELS` を書き換えると候補を変えられます。料金は OpenRouter の 100 万トークンあたり（入力 / 出力）です。
 
 | モデル | 判断基準（要約） | 料金 |
 | --- | --- | --- |
@@ -85,7 +94,7 @@ d1.1 は下の「判断基準」を読んで選びます。`src/models.ts` の `
 | Pi への登録 | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
 | モデル情報 | pi-ai の OpenRouter カタログから取得。カタログにない `tencent/hy4` は `hy4-preview` を元に料金だけ差し替え |
 
-Gemini は再帰する JSON スキーマを受け付けません。そのため `exec` ツールの `input` は「任意のオブジェクト」として渡しています（`src/workspace.ts`）。
+Gemini は再帰する JSON スキーマを受け付けません。そのため `exec` ツールの `input` は「任意のオブジェクト」として渡しています（`src/extensions/workspace.ts`）。
 
 ## API
 
@@ -107,7 +116,7 @@ pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
 
 `cf` は beta のため、secret を 1 つだけ登録するコマンドがまだありません。secret の登録だけは Wrangler を使います（設定ファイルを読まないので、`--name` で Worker 名を渡します）。
 
-GitHub に push するツールは、`API_TOKEN` が設定されているときだけ有効になります（後述）。
+`/api/sessions/:id/repos`（読み取りトークンを渡す入口）は、`API_TOKEN` が設定されているときだけ使えます。
 
 `/api/events` の入力:
 
@@ -165,7 +174,7 @@ Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています�
 | 止まっても続く | ツールの結果を 1 つずつ記録しておき、Durable Object が再起動したら、スクリプトを最初から同じ結果で再生して続きから動かす |
 | 制限 | 計算だけで進められるのは約 3 秒（割り込み 30,000 回）、メモリ 32 MB、全体で 5 分 |
 | `models.*` | 使わない（`models: false`）。スクリプトからモデルを何度も呼ぶと、DecisionModel を通らずに費用がかかるため |
-| ツールの決まり | スクリプトから呼んでも同じ。たとえば `tools.git_push` で `main` を push しようとしても断られる |
+| ツールの決まり | スクリプトから呼んでも同じ。たとえば `tools.repo_push` で `main` を push しようとしても断られる |
 
 コードを動かすツールは 2 つあり、役割が違います。
 
@@ -174,7 +183,7 @@ Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています�
 | `exec` | ワークスペースの中の JavaScript（`node:fs` と git が使える） | ファイルを読んで計算する |
 | `codemode` | エージェント自身のツールを呼ぶスクリプト | ツールをまとめて何度も呼ぶ |
 
-スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`createCodemodeSandbox` を差し替えるだけで済む作りです）。
+スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`src/extensions/codemode.ts` のサンドボックスを差し替えるだけで済む作りです）。
 
 ## Artifacts（エージェントの git リポジトリ）
 
@@ -205,59 +214,9 @@ git -c http.extraHeader="Authorization: Bearer $READ_TOKEN" clone --branch agent
 
 トークンを remote の URL に入れないので、`.git/config` には残りません。
 
-## GitHub への push と PR 作成（停止中）
+## GitHub について
 
-いまはエージェントの作業場を Artifacts にしているため、GitHub App の準備は止めています。以下の仕組みはコードに残してありますが、設定しない限り動きません。push のツール名は `github_push` です（`git_branch` と `git_commit` は共通の `git` 拡張にあります）。
-
-
-pi 拡張 `github`（`src/extensions/github.ts`）が、GitHub App の権限でリポジトリを clone し、ブランチを切って commit・push し、PR を作ります。
-
-| ツール | 内容 |
-| --- | --- |
-| `github_clone` | 許可したリポジトリを `/workspace` に clone する |
-| `git_branch` | `agent/` で始まるブランチを作って切り替える |
-| `git_commit` | 作業ツリーの変更をすべて commit する |
-| `git_push` | いまのブランチを、同じ名前のブランチに push する |
-| `create_pull_request` | draft の PR を作る。同じブランチの PR が開いていれば、それを返す |
-
-ツールの中で守る決まり（モデルの指示に関係なく守られます）:
-
-| 決まり | 内容 |
-| --- | --- |
-| リポジトリ | `GITHUB_REPOS` に書いたものだけ |
-| ブランチ | push できるのは `agent/` で始まるブランチだけ。force push、削除、別名のブランチへの push はできない |
-| トークン | 1 時間で切れるトークンを、対象のリポジトリと権限（contents と pull requests の書き込み）に絞って発行する。トークンはリクエストのヘッダーにだけ入れ、ワークスペース（`exec` から読める場所）やモデルへの出力には出さない |
-
-### 設定
-
-| 項目 | 置き場所 | 値 |
-| --- | --- | --- |
-| `GITHUB_APP_ID` | `cloudflare.config.ts` の `env`（`bindings.text`） | App の設定画面の App ID |
-| `GITHUB_APP_INSTALLATION_ID` | `cloudflare.config.ts` の `env`（`bindings.text`） | インストール後の URL の末尾の数字 |
-| `GITHUB_REPOS` | `cloudflare.config.ts` の `env`（`bindings.text`） | push を許すリポジトリ（`owner/name` をカンマ区切り） |
-| `GITHUB_APP_PRIVATE_KEY` | Worker の secret | App の秘密鍵（ダウンロードした `.pem` をそのまま。PKCS#1 のままで読めます） |
-| `API_TOKEN` | Worker の secret | API の認証（上記） |
-
-この 5 つがそろうまで、GitHub のツールはモデルに出ません。
-
-```bash
-pnpm exec wrangler secret put GITHUB_APP_PRIVATE_KEY --name d1agents-pi-durable < d1agents-bot.private-key.pem
-```
-
-GitHub App の作り方:
-
-| 手順 | 場所・操作 | 設定 |
-| --- | --- | --- |
-| 1 | Settings → Developer settings → GitHub Apps → New GitHub App | 名前（例：`d1agents-bot`）、Homepage URL（リポジトリの URL） |
-| 2 | Webhook | 「Active」のチェックを外す |
-| 3 | Repository permissions | Contents：Read and write、Pull requests：Read and write、Metadata：Read-only |
-| 4 | Where can this GitHub App be installed? | Only on this account |
-| 5 | 作成後の画面 | Generate a private key（`.pem` がダウンロードされる） |
-| 6 | Install App | Only select repositories で、使うリポジトリだけを選ぶ |
-
-あわせて、リポジトリの `main` にブランチ保護（またはルールセット）を設定しておくと、ツールの決まりに不具合があっても GitHub 側で `main` への直接の push を止められます。
-
-Pi は会話を作った時点でツールの一覧を決めます。GitHub のツールを有効にする前に作った会話（`session`）では使えないので、新しい `session` 名で試してください。
+GitHub App で push と PR を作る仕組みは、Artifacts に切り替えたため削除しました。必要になったら、コミット `2fce24f` の `src/extensions/github.ts` と `src/github/app.ts` から戻せます。
 
 ## ツールチェーン
 
@@ -285,13 +244,11 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | テスト | 確かめること |
 | --- | --- |
 | `decision-model.test.ts` | ガードレールとフォールバックの判定 |
-| `workspace.test.ts` | Workspace ツールの結果がモデルに渡ること |
-| `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと |
+| `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること |
 | `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
-| `github-app.test.ts` | GitHub App の鍵（PKCS#1 / PKCS#8）の読み込み、JWT の署名、トークンの絞り込みとキャッシュ |
+| `git.test.ts` | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること |
 | `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
-| `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、GitHub の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
-| `github-extension.test.ts` | branch・commit の動き、`agent/` 以外と許可外のリポジトリを断ること、PR 作成の重複防止、トークンが出力に出ないこと（GitHub は偽物の API で代用。実際の push はテストしていない） |
+| `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
 
 ## ローカルで動かす
 

@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [agents(), cloudflare({ inspectorPort: 9242 })],
   resolve: {
     // The commit-pinned pi artifacts intentionally omit sibling package
-    // dependencies. Resolve every internal pi import from this example's
+    // dependencies. Resolve every internal pi import from this project's
     // node_modules so one revision supplies all provider and harness types.
     dedupe: [
       "@earendil-works/chord",

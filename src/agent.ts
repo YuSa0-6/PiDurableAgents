@@ -5,30 +5,20 @@ import { createGitClient } from "@cloudflare/computer/git";
 import { createGitModule } from "@cloudflare/computer/modules/git";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
-import { PiHarness, type PiModel, type PiSessionId } from "agents/harness/pi";
+import { PiHarness, type PiModel } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
-import type { Decision, RouterEvent } from "./decision-model";
-import { app } from "./router";
+import type { Decision } from "./decision-model";
+import type { RouterEvent } from "./event";
 import {
   DEFAULT_MODEL,
   executionModels,
   gatewayOpenRouterProvider
-} from "./models";
+} from "./execution-models";
 import { artifactsSessionId, createArtifactsExtension } from "./extensions/artifacts";
-import { codemodeExtension } from "./extensions/codemode";
+import { createCodemodeExtension } from "./extensions/codemode";
 import { createGitExtension } from "./extensions/git";
-import { createGitHubExtension, githubSetup } from "./extensions/github";
-import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "./workspace";
-
-const PREAMBLE = [
-  "You are a concise coding assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language.",
-  "You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there. Paths are absolute.",
-  "Two tools run code, for different jobs:",
-  "- exec runs a JavaScript module inside the workspace, with node:fs and git. Use it to compute over files.",
-  "- codemode runs a script that calls your other tools as tools.<name>(args). Use it to do many tool calls in one step, such as reading or searching many files, or a fixed sequence of tool calls.",
-  "Use tools whenever they can answer the request, and explain their results plainly."
-].join("\n");
+import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "./extensions/workspace";
 
 /** One Pi Durable session per Durable Object, driven over HTTP. */
 export class PiAgent extends DurableObject<Env> {
@@ -60,25 +50,14 @@ export class PiAgent extends DurableObject<Env> {
     ]
   });
   readonly registry = createRegistry();
-  // GitHub App access, when configured (see cloudflare.config.ts). One instance per
-  // object, so its installation tokens are cached between calls.
-  readonly github = githubSetup(this.env);
   readonly harness = new PiHarness({
     harness: async ({ storage, context, onWake }) => {
-      // pi's own extension: the system prompt and the workspace tools.
-      this.registry.install({
-        name: "playground",
-        sections: [{ key: "preamble", render: () => PREAMBLE, tag: false }],
-        tools: createWorkspaceTools(this.workspace)
-      });
+      // What the model sees: the system prompt and its tools, as pi extensions.
+      this.registry.install(createWorkspaceExtension(this.workspace));
       this.registry.install(createGitExtension(this.workspace));
       this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
-      // Paused: on only when the GitHub App is configured.
-      if (this.github) {
-        this.registry.install(createGitHubExtension(this.workspace, this.github));
-      }
       // Code mode last: its prompt section lists the tools installed above.
-      this.registry.install(codemodeExtension());
+      this.registry.install(createCodemodeExtension());
       const models = createModels();
       models.setProvider(this.ai.provider);
       // OpenRouter models, streamed through the gateway.
@@ -116,7 +95,7 @@ export class PiAgent extends DurableObject<Env> {
   ): Promise<EventResult> {
     this.#log(event, decision);
     const session = this.harness.session();
-    await this.#applyModel(session.id, decision);
+    await this.#applyModel(decision);
     const options = {
       operationId: event.id,
       // Recorded in the transcript as where the input came from.
@@ -189,7 +168,8 @@ export class PiAgent extends DurableObject<Env> {
       }));
   }
 
-  readonly #models = new Map<PiSessionId, string>();
+  /** The execution model the session runs on, once set. */
+  #appliedModel?: string;
 
   /** The pi-ai model object for an execution model id. */
   #model(id: string): PiModel {
@@ -198,10 +178,10 @@ export class PiAgent extends DurableObject<Env> {
     return model;
   }
 
-  async #applyModel(session: PiSessionId, decision: Decision): Promise<void> {
-    if (this.#models.get(session) === decision.model) return;
-    await this.harness.session(session).setModel(this.#model(decision.model));
-    this.#models.set(session, decision.model);
+  async #applyModel(decision: Decision): Promise<void> {
+    if (this.#appliedModel === decision.model) return;
+    await this.harness.session().setModel(this.#model(decision.model));
+    this.#appliedModel = decision.model;
   }
 
   #logReady = false;
@@ -250,7 +230,3 @@ export type LoggedDecision = {
   readonly text: string;
   readonly decision: Decision;
 };
-
-export default {
-  fetch: (request, env, ctx) => app.fetch(request, env, ctx)
-} satisfies ExportedHandler<Env>;

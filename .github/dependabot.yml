@@ -32,7 +32,6 @@ updates:
           - "cf"
           - "@cloudflare/vite-plugin"
           - "@cloudflare/vitest-plugin"
-          - "@cloudflare/workers-types"
       vite-plus:
         patterns:
           - "vite-plus"

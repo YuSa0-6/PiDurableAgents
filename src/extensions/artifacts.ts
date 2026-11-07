@@ -1,4 +1,5 @@
 import type { Workspace } from "@cloudflare/computer";
+import type { ArtifactClient } from "@cloudflare/computer/artifacts";
 import { defineTool, type Extension } from "@earendil-works/pi-durable";
 import { obj, opt, str } from "@earendil-works/pi-schema";
 import {
@@ -26,25 +27,11 @@ import {
  * for one repository and a few minutes, and revokes it when done.
  */
 
-/** The Artifacts client calls this extension makes; the Workspace's client has them. */
-export type ArtifactRepos = {
-  create(
-    name: string,
-    opts?: { description?: string; setDefaultBranch?: string }
-  ): Promise<{ name: string; remote: string; defaultBranch: string; token: string }>;
-  get(name: string): Promise<{ name: string; remote: string; defaultBranch: string }>;
-  list(): Promise<{ name: string; defaultBranch: string; lastPushAt: string | null; source: string | null }[]>;
-  import(
-    name: string,
-    source: { url: string; branch?: string; depth?: number }
-  ): Promise<{ name: string; remote: string; defaultBranch: string; token: string }>;
-  createToken(
-    name: string,
-    scope?: "read" | "write",
-    ttl?: number
-  ): Promise<{ id: string; plaintext: string; expiresAt: string }>;
-  revokeToken(name: string, tokenOrId: string): Promise<boolean>;
-};
+/** The Artifacts client calls this extension makes: `workspace.artifacts`, or a fake in tests. */
+export type ArtifactsClient = Pick<
+  ArtifactClient,
+  "create" | "get" | "list" | "import" | "createToken" | "revokeToken"
+>;
 
 /** Seconds a token for one clone or push lives. */
 const OPERATION_TOKEN_TTL = 10 * 60;
@@ -58,7 +45,7 @@ export type ArtifactsOptions = {
 };
 
 /** HTTP headers for git over HTTPS to Artifacts. */
-export function artifactsGitHeaders(token: string): Record<string, string> {
+function gitHeaders(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` };
 }
 
@@ -80,7 +67,7 @@ export function nameFromUrl(url: string): string {
 
 export function createArtifactsExtension(
   workspace: Workspace,
-  repos: ArtifactRepos,
+  artifacts: ArtifactsClient,
   options: ArtifactsOptions = {}
 ): Extension {
   const git = workspace.git;
@@ -92,19 +79,19 @@ export function createArtifactsExtension(
     scope: "read" | "write",
     work: (token: string, remote: string) => Promise<ReturnType<typeof ok>>
   ) => {
-    const { remote } = await repos.get(name);
-    const token = await repos.createToken(name, scope, OPERATION_TOKEN_TTL);
+    const { remote } = await artifacts.get(name);
+    const token = await artifacts.createToken(name, scope, OPERATION_TOKEN_TTL);
     try {
       return await redacting([token.plaintext], () => work(token.plaintext, remote));
     } finally {
-      await repos.revokeToken(name, token.id).catch(() => false);
+      await artifacts.revokeToken(name, token.id).catch(() => false);
     }
   };
 
   const clone = (name: string, dir: string, ref?: string) =>
     withToken(name, "read", async (token, remote) => {
       // Credentials go in headers only: a URL with a token would be saved in .git/config.
-      await git.clone({ url: remote, dir, ...(ref ? { ref } : {}), headers: artifactsGitHeaders(token) });
+      await git.clone({ url: remote, dir, ...(ref ? { ref } : {}), headers: gitHeaders(token) });
       return ok(`Cloned ${name} into ${dir} on ${await currentBranch(workspace, dir)}.`);
     });
 
@@ -113,7 +100,7 @@ export function createArtifactsExtension(
     const deadline = Date.now() + IMPORT_WAIT_MS;
     for (;;) {
       try {
-        await repos.get(name);
+        await artifacts.get(name);
         return;
       } catch (error) {
         if (Date.now() > deadline) throw error;
@@ -124,7 +111,7 @@ export function createArtifactsExtension(
 
   /** Revoke the token create() and import() hand back; each operation mints its own. */
   const dropInitialToken = (name: string, token: string) =>
-    repos.revokeToken(name, token).catch(() => false);
+    artifacts.revokeToken(name, token).catch(() => false);
 
   return {
     name: "artifacts",
@@ -160,7 +147,7 @@ export function createArtifactsExtension(
             if (url.protocol !== "https:") throw new Refusal("Only HTTPS Git URLs can be imported.");
             const name = repoName(args.name ?? nameFromUrl(args.url));
             const dir = workspacePath(args.dir ?? `/workspace/${name}`);
-            const imported = await repos.import(name, {
+            const imported = await artifacts.import(name, {
               url: args.url,
               ...(args.branch ? { branch: args.branch } : {})
             });
@@ -185,7 +172,7 @@ export function createArtifactsExtension(
           guarded(async () => {
             const name = repoName(args.name);
             const dir = workspacePath(args.dir ?? `/workspace/${name}`);
-            const created = await repos.create(name, {
+            const created = await artifacts.create(name, {
               ...(args.description ? { description: args.description } : {}),
               setDefaultBranch: "main"
             });
@@ -234,7 +221,7 @@ export function createArtifactsExtension(
                 url: remote,
                 ref: branch,
                 remoteRef: branch,
-                headers: artifactsGitHeaders(token)
+                headers: gitHeaders(token)
               });
               if (!result.ok) return fail(`Push of ${branch} failed: ${result.error ?? "unknown error"}`);
               return ok(`Pushed ${branch} to ${name}.`);
@@ -248,7 +235,7 @@ export function createArtifactsExtension(
         replay: "safe",
         execute: () =>
           guarded(async () => {
-            const list = await repos.list();
+            const list = await artifacts.list();
             if (list.length === 0) return ok("No repositories yet.");
             return ok(
               list

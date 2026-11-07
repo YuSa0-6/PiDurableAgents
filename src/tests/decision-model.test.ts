@@ -3,9 +3,9 @@ import {
   decide,
   DECISION_MODEL,
   type DecisionEnv,
-  type RouterEvent
 } from "../decision-model";
-import { DEFAULT_MODEL, EXECUTION_MODELS } from "../models";
+import type { RouterEvent } from "../event";
+import { DEFAULT_MODEL, EXECUTION_MODELS } from "../execution-models";
 
 function event(text: string): RouterEvent {
   return {

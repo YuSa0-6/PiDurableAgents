@@ -4,9 +4,9 @@ import { obj, str } from "@earendil-works/pi-schema";
 
 /**
  * pi extension: local git on workspace repositories (branch and commit),
- * and the rules and helpers the remote extensions (artifacts, github) share.
+ * and the rules and helpers a remote extension (./artifacts.ts) builds on.
  *
- * Rules every remote extension enforces, whatever the model asks:
+ * Rules a remote extension enforces, whatever the model asks:
  * - push only the current branch, to the branch of the same name, and only
  *   branches under `agent/`; no force push, no delete, no other remote ref;
  * - credentials go only into request headers. They are never written to the
@@ -15,7 +15,7 @@ import { obj, str } from "@earendil-works/pi-schema";
 
 export const BRANCH_PREFIX = "agent/";
 const BRANCH_PATTERN = /^agent\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
-const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@users.noreply.d1agents" };
+const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@noreply.d1agents.invalid" };
 
 /** A rule a tool enforces; reported to the model as a tool error, not a crash. */
 export class Refusal extends Error {}
