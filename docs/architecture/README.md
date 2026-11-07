@@ -2,6 +2,8 @@
 
 D1Agents の「いまの構成」と「目指す構成（案）」を並べた図です。図は [stack-diagram](https://github.com/caru-ini/stack-diagram) で作りました。2 枚の図は、同じ部品を同じ位置に置いています。期待値の図で役割の先頭に「＋」があるものが、新しく足す部分です。
 
+基本の考え方は 1 つです。**Pi が動いている間の振る舞いは pi 拡張（extensions）に入れ、外とのつなぎはアプリ側（Worker・Durable Object）に残します。**
+
 | ファイル | 内容 |
 | --- | --- |
 | `current.html` / `current.png` / `current-dark.png` | 現状 |
@@ -13,15 +15,32 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="current-dark.png">
-  <img src="current.png" alt="現状の構成図：開発者が認証なしの HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は DecisionModel に判定させ（d1.1 は AI Gateway 経由）、RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway から OpenRouter のモデルを呼び、Workspace のツールを使う。Workspace は Dynamic Worker で JavaScript を実行し、GitHub から clone だけできる" width="100%">
+  <img src="current.png" alt="現状の構成図：開発者が認証なしの HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は DecisionModel で入力チェックと d1.1 によるモデル選びをし、RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter のモデルを呼ぶ。pi 拡張は playground の 1 つで、Workspace ツールが Dynamic Worker で JavaScript を実行し、GitHub から clone だけできる" width="100%">
 </picture>
 
 ## 期待値（案）
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="target-dark.png">
-  <img src="target.png" alt="期待値の構成図：現状に加えて、CLI と評価ランナーが同じ API を認証付きの HTTP と SSE で使う。Pi Durable にガードとサブエージェント、Dynamic Worker に bash、GitHub に push、任意で Container による npm test を足す" width="100%">
+  <img src="target.png" alt="期待値の構成図：CLI と評価ランナーが同じ API を認証付きの HTTP と SSE で使う。pi 拡張に Workspace（bash・順番実行）、ガード、検証、要約、サブエージェントを並べる。Workspace から Dynamic Worker で exec と bash、任意で Container で npm test、GitHub に push する" width="100%">
 </picture>
+
+## pi 拡張とアプリ側の分担
+
+pi の拡張は、ツール（`tools`）、システムプロンプトの段落（`sections`）、処理の前後への割り込み（`hooks`）、既存のツールの包み直し（`wraps`）、途中から再開できる独自の処理（`tasks`）をまとめたものです。
+
+| 機能 | やり方 | 置き場所 | 状態 |
+| --- | --- | --- | --- |
+| ガード | `beforeTool` で危険な操作を止める | pi 拡張 | 案 |
+| 検証 | `onYield` で「テストが通るまで続ける」 | pi 拡張 | 案 |
+| 要約 | `beforeCompact` でコーディング向けに残すものを決める | pi 拡張 | 案 |
+| サブエージェント | `tools` と `tasks`。止まっても再開できる | pi 拡張 | 案 |
+| Workspace ツール | いまの `playground` 拡張。bash と順番実行を足す | pi 拡張 | 済（bash と順番実行は案） |
+| DecisionModel | 送る前に `session.setModel()` でモデルを切り替える。pi の割り込みには「この依頼だけモデルを変える」場所がないため | アプリ側 | 済 |
+| 認証・API・SSE | Pi は通信の方法を決めない設計 | アプリ側 | 案 |
+| 保存先・起こす仕組み | `PiHarness` が SQLite と alarm を受け持つ | アプリ側 | 済 |
+
+DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確かめるものです。pi 拡張のガードは、Pi の中でツールを実行する直前に止めるものです。
 
 ## 現状と期待値の比較
 
@@ -38,15 +57,14 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 | 認証 | なし（URL を知っていれば誰でも呼べる） | Bearer トークン。Worker の secret に置く | 案 |
 | API | `/api/events`、`/api/decide`、判定ログ | セッション単位の prompt / stream（SSE）/ messages / abort | 案 |
 | API 設計の進め方 | ー | 試作で Pi の実データを見てから、イベントの形を `docs/api.md` に決める | 案 |
-| モデル選択 | DecisionModel（ガード + d1.1）→ OpenRouter の 5 モデル | 変えない | 済 |
+| モデル選択 | DecisionModel（入力チェック + d1.1）→ OpenRouter の 5 モデル | 変えない | 済 |
 | 会話の永続化 | Pi Durable が Durable Object の SQLite に保存 | 変えない | 済 |
-| ハーネスの制御 | 再実行してよいツールだけを指定 | 危険な操作のガード（`hook` / `wrapTool`）、コーディング向けの要約設定 | 案 |
-| 分担 | 1 つのエージェントだけ | 調査役などのサブエージェント | 案 |
+| pi 拡張 | `playground` だけ（プロンプトと Workspace ツール） | ガード・検証・要約・サブエージェントを拡張として足す | 案 |
 | ファイル操作 | read / write / edit / ls / find / grep | 変えない | 済 |
 | コード実行 | `exec`（JavaScript のみ、通信なし） | `exec` を順番に実行し、bash（`WorkerShellBackend`、just-bash）を足す。bash も Dynamic Worker で動く。ライブラリ側ではまだ実験的な機能 | 案 |
 | 本物の Linux | なし | Container で `npm install` / `npm test`（任意・費用あり） | 案 |
 | git | clone / status / diff / log | commit と push。GitHub の認証方法は未定 | 案 |
-| 品質の測定 | 単体テスト 8 件 | 小さなコーディング課題で成功率・コスト・時間を記録 | 案 |
+| 品質の測定 | 単体テスト 8 件 | 評価ランナーで成功率・コスト・時間を記録。拡張のあり・なしも比べる | 案 |
 | デプロイ | 手元から `wrangler deploy` | 変えない | 済 |
 
 ## 図を作り直すとき
