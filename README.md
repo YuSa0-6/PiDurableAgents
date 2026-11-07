@@ -7,6 +7,13 @@ Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objec
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
 - ドキュメント: [Pi harness](https://developers.cloudflare.com/agents/harnesses/pi/)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture/current-dark.png">
+  <img src="docs/architecture/current.png" alt="現状の構成図" width="100%">
+</picture>
+
+現状と、目指す構成（案）の比較は [`docs/architecture/`](docs/architecture/README.md) にあります。
+
 ## 全体の流れ
 
 ```mermaid
