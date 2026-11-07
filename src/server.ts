@@ -5,28 +5,23 @@ import { createGitClient } from "@cloudflare/computer/git";
 import { createGitModule } from "@cloudflare/computer/modules/git";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
-import type { UserInput } from "@earendil-works/pi-durable";
 import { PiHarness, type PiModel, type PiSessionId } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
-import { WebSockets } from "agents/websockets";
-import { decide, type Decision, type RouterEvent } from "./decision-model";
+import type { Decision, RouterEvent } from "./decision-model";
 import { app } from "./router";
 import {
   DEFAULT_MODEL,
   executionModels,
   gatewayOpenRouterProvider
 } from "./models";
-import { PiSessionSockets } from "./sockets";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "./workspace";
-
 
 const PREAMBLE =
   "You are a concise assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language. You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there, and run JavaScript modules in it with exec, which can also use git. Paths are absolute. Use tools whenever they can answer the request, and explain their results plainly.";
 
-/** Playable pi session backed by one Durable Object. */
+/** One Pi Durable session per Durable Object, driven over HTTP. */
 export class PiAgent extends DurableObject<Env> {
-  // Workers AI and AI Gateway over the AI binding, as a pi-ai provider.
   // Workers AI and AI Gateway over the AI binding. The gateway holds the
   // OpenRouter key (BYOK), so the Worker has none.
   readonly ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
@@ -81,23 +76,7 @@ export class PiAgent extends DurableObject<Env> {
     defaults: { model: this.#model(DEFAULT_MODEL), thinkingLevel: "low" }
   });
 
-  // App glue, not the harness: how this app puts sessions on a socket.
-  // Browser chat goes through the same DecisionModel as HTTP events.
-  readonly sockets = new PiSessionSockets(
-    this.harness,
-    this.registry,
-    (tag) => this.ctx.getWebSockets(tag),
-    (session, input, operationId) => this.#routeSocketInput(session, input, operationId)
-  );
-  readonly webSockets = new WebSockets(this.sockets.options());
-  readonly lifecycle = Lifecycle.install(this)
-    .use(this.webSockets)
-    .use(this.harness);
-
-  /** Host startup, after the harness has opened pi. */
-  async onStart(): Promise<void> {
-    await this.sockets.reattach();
-  }
+  readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
   /**
    * Handle one routed event: apply the DecisionModel's choice of model, then
@@ -160,28 +139,6 @@ export class PiAgent extends DurableObject<Env> {
       }));
   }
 
-  /** Socket input: the same DecisionModel, then the socket submits it. */
-  async #routeSocketInput(
-    session: PiSessionId,
-    input: UserInput,
-    operationId?: string
-  ): Promise<void> {
-    const event: RouterEvent = {
-      id: operationId ?? crypto.randomUUID(),
-      source: "websocket",
-      type: "message",
-      text: inputText(input),
-      session,
-      receivedAt: new Date().toISOString()
-    };
-    const decision = await decide(this.env, event);
-    this.#log(event, decision);
-    if (decision.action === "reject") {
-      throw new Error(`DecisionModel rejected the input: ${decision.reasons.join("; ")}`);
-    }
-    await this.#applyModel(session, decision);
-  }
-
   readonly #models = new Map<PiSessionId, string>();
 
   /** The pi-ai model object for an execution model id. */
@@ -234,13 +191,6 @@ export type LoggedDecision = {
   readonly text: string;
   readonly decision: Decision;
 };
-
-function inputText(input: UserInput): string {
-  if (typeof input === "string") return input;
-  return input
-    .map((part) => (part.type === "text" ? part.text : ""))
-    .join("\n");
-}
 
 export default {
   fetch: (request, env, ctx) => app.fetch(request, env, ctx)

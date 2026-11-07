@@ -1,4 +1,3 @@
-import { routeAgentRequest } from "agents";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
@@ -19,16 +18,13 @@ import {
  * Event Router (Hono): the entry point for every event.
  *
  *   HTTP / webhook ──▶ Event Router ──▶ DecisionModel (d1.1) ──▶ PiAgent (Pi Durable) ──▶ OpenRouter LLM
- *   Browser chat   ──▶ /agents/pi-agent/<session> (WebSocket) ──▶ same DecisionModel hook
  *
  * | Method | Path                          | What it does                                  |
  * | ------ | ----------------------------- | --------------------------------------------- |
  * | GET    | /api/health                   | Liveness and the routing policy               |
- * | GET    | /api/session                  | A fresh session id                            |
  * | POST   | /api/decide                   | DecisionModel only (dry run, no answer)       |
  * | POST   | /api/events                   | Router → DecisionModel → Pi agent → LLM       |
  * | GET    | /api/sessions/:id/decisions   | The decisions a session's object has logged   |
- * | GET    | /agents/pi-agent/:id          | WebSocket for the browser UI                  |
  */
 
 /** The JSON body `/api/events` and `/api/decide` accept. */
@@ -108,9 +104,6 @@ app.get("/api/health", (c) =>
   })
 );
 
-// A fresh session id for the client to open its WebSocket against.
-app.get("/api/session", (c) => c.json({ session: crypto.randomUUID() }));
-
 app.post("/api/decide", async (c) => {
   const body = await readJson(c.req.raw);
   const event = normalise(body);
@@ -134,12 +127,6 @@ app.get("/api/sessions/:id/decisions", async (c) => {
   if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
   const agent = c.env.PiAgent.getByName(id);
   return c.json({ decisions: await agent.decisions(50) });
-});
-
-// WebSockets for the browser UI: the Agents SDK routes /agents/<agent>/<name>.
-app.all("/agents/*", async (c) => {
-  const response = await routeAgentRequest(c.req.raw, c.env, { cors: true });
-  return response ?? c.json({ error: "Not found" }, 404);
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

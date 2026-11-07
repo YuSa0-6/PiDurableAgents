@@ -1,20 +1,17 @@
 # D1Agents: Pi Durable Agent on Cloudflare
 
-Cloudflare Agents SDK の `PiHarness`（Pi Durable）を使ったエージェントです。
+Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objects で動かすエージェントです。ブラウザ UI はなく、HTTP API だけで使います。
 すべてのリクエストは **Event Router（Hono）** から入ります。**DecisionModel（Liquid d1.1）** が依頼の内容に合う実行モデルを選び、**Pi Durable Agent** がそのモデルで答えます。モデルはすべて OpenRouter のものを Cloudflare AI Gateway 経由で呼びます。
 
 - デプロイ先: https://d1agents-pi-durable.itumens.workers.dev
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
 - ドキュメント: [Pi harness](https://developers.cloudflare.com/agents/harnesses/pi/)
 
-![UI](docs/ui.png)
-
 ## 全体の流れ
 
 ```mermaid
 flowchart LR
   A[HTTP / Webhook<br>POST /api/events] --> R[Event Router<br>Hono]
-  B[ブラウザ UI<br>WebSocket] --> R
   R --> G{ガードレール}
   G -- reject --> X[422 を返す]
   G --> D[DecisionModel<br>liquid/d1.1]
@@ -30,7 +27,9 @@ flowchart LR
 | DecisionModel | `src/decision-model.ts` | ガードレールのあと、d1.1 に実行モデルを選ばせる |
 | 実行モデル一覧 | `src/models.ts` | 候補モデルと、d1.1 に渡す判断基準（`criteria`） |
 | PiAgent | `src/server.ts` | Pi Durable を動かす Durable Object。選ばれたモデルに切り替えて回答する |
-| UI 配信（フォールバック） | `scripts/embed-ui.mjs` | UI を Worker に埋め込んで配信する（後述） |
+| Workspace ツール | `src/workspace.ts` | Durable Object の SQLite 上のファイル操作と、JavaScript 実行（`exec`） |
+
+1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 
 ## DecisionModel の判定手順
 
@@ -89,7 +88,6 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 | POST | `/api/decide` | DecisionModel だけを実行（実行モデルは呼ばない） |
 | POST | `/api/events` | Router → DecisionModel → Pi → LLM の全体を実行 |
 | GET | `/api/sessions/:id/decisions` | そのセッションの判定ログ（新しい順） |
-| GET | `/agents/pi-agent/:id` | ブラウザ UI 用の WebSocket |
 
 `/api/events` の入力:
 
@@ -128,8 +126,6 @@ curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H 'c
 curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisions
 ```
 
-ブラウザ UI で送ったメッセージも同じ DecisionModel を通り、`source: "websocket"` として記録されます。UI 右上のバッジには、直近の回答を書いたモデルが出ます。
-
 どのモデルが実際に答えたかは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログでも確認できます。
 
 ## ツールチェーン
@@ -140,17 +136,15 @@ curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisi
 | Hono | Event Router | `src/router.ts` |
 | `cf` CLI | Cloudflare リソースの確認・操作 | `pnpm exec cf cli search "<やりたいこと>"` |
 | Wrangler | デプロイ | `pnpm run deploy` |
-| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test:workers` |
-| Vitest 5（Vite+ 経由）+ happy-dom + Testing Library | React UI のテスト | `pnpm test:ui` |
+| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test` |
 
-テストは `vp test` で動かします。`pnpm test` は次の 2 つを順に実行します。
+テストは Workers ランタイムで動きます（設定は `src/tests/vitest.config.ts`）。`src/tests/worker.ts` は本番と同じ Pi Durable + Workspace の組み合わせを、pi-ai の faux モデルで動かすテスト用の Durable Object です。
 
-| スイート | 設定ファイル | 実行環境 | 対象 |
-| --- | --- | --- | --- |
-| Workers | `src/tests/vitest.config.ts` | Workers ランタイム（`@cloudflare/vitest-plugin`、旧 `@cloudflare/vitest-pool-workers`） | `src/tests/*.test.ts` |
-| UI | `src/tests/ui/vitest.config.ts` | Node + happy-dom | `src/tests/ui/*.test.tsx` |
-
-UI のコンポーネントは `src/ui/` にあります。`src/client.tsx` はページに `<App />` を描画するだけの入口なので、テストは `src/ui/` を直接 import します。
+| テスト | 確かめること |
+| --- | --- |
+| `decision-model.test.ts` | ガードレールとフォールバックの判定 |
+| `workspace.test.ts` | Workspace ツールの結果がモデルに渡ること |
+| `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと |
 
 ## ローカルで動かす
 
@@ -162,36 +156,22 @@ pnpm install
 pnpm start
 ```
 
-`AI` バインディングはリモートで動かすため、`wrangler login` が必要です。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
+起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` バインディングはリモートで動かすため、`wrangler login` が必要です。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
 
 ## デプロイ
-
-通常はこちらです（UI を Workers Static Assets として配信）:
 
 ```bash
 pnpm run deploy
 ```
 
-静的ファイルのアップロードができない環境では、UI を Worker に埋め込む方法を使います:
-
-```bash
-pnpm run deploy:embedded
-```
-
-| 方法 | UI の置き場所 | 使う場面 |
-| --- | --- | --- |
-| `deploy` | Workers Static Assets | 通常の手元環境、CI |
-| `deploy:embedded` | Worker のモジュール（`ui-assets.js`） | プロキシが `Authorization` ヘッダーを書き換える環境 |
-
-`deploy:embedded` が必要になる理由: Static Assets のアップロードは一時的な JWT を `Authorization` ヘッダーで送ります。API トークンを差し込むプロキシを通すと、このヘッダーが置き換わり 401 になります。Worker 本体のアップロードは API トークンで通るので、UI を Worker に含めて配信します。
-
-UI を小さくするため、コードのシンタックスハイライト（`@streamdown/code`）は外しています。これで UI は約 11 MB から約 1.3 MB になりました。コードブロックは色なしの等幅で表示されます。
+Worker と Durable Object だけをデプロイします。静的ファイル（Static Assets）はありません。
 
 ## 元のサンプルからの変更点
 
 | 項目 | 元のサンプル | このリポジトリ |
 | --- | --- | --- |
 | 入口 | `fetch` 関数で直接振り分け | Hono の Event Router |
+| 画面 | React のチャット UI（WebSocket） | なし。HTTP API のみ |
 | モデル選択 | 固定（Workers AI `glm-5.3-flash`） | d1.1 が毎回 OpenRouter の 5 モデルから選ぶ |
 | HTTP からの利用 | なし | `POST /api/events` |
 | 判定ログ | なし | Durable Object の SQLite に `router_decisions` テーブル |

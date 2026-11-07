@@ -33,21 +33,9 @@ updates:
           - "@cloudflare/vite-plugin"
           - "@cloudflare/vitest-plugin"
           - "@cloudflare/workers-types"
-          - "@cloudflare/kumo"
       vite-plus:
         patterns:
           - "vite-plus"
-      ui:
-        patterns:
-          - "react"
-          - "react-dom"
-          - "@types/react"
-          - "@types/react-dom"
-          - "@vitejs/plugin-react"
-          - "streamdown"
-          - "@phosphor-icons/react"
-          - "tailwindcss"
-          - "@tailwindcss/vite"
       minor-and-patch:
         update-types:
           - "minor"

@@ -40,7 +40,7 @@ export type Decision = {
 export type RouterEvent = {
   /** Idempotency key: the same id is answered once. */
   readonly id: string;
-  /** Where the event came from, e.g. `http`, `websocket`, `webhook`. */
+  /** Where the event came from, e.g. `http`, `webhook`. */
   readonly source: string;
   /** Free-form event type, e.g. `message`, `github.issue`. */
   readonly type: string;
