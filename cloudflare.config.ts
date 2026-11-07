@@ -43,6 +43,13 @@ export default defineConfig({
 			}),
 			// `exec` runs JavaScript in Dynamic Workers minted through this.
 			LOADER: bindings.workerLoader(),
+			// The agent's git repositories (Cloudflare Artifacts), one set per session.
+			ARTIFACTS: bindings.artifacts({
+				namespace: "d1agents",
+				dev: {
+					remote: true,
+				},
+			}),
 		},
 	},
 });

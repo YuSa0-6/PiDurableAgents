@@ -15,7 +15,9 @@ import {
   executionModels,
   gatewayOpenRouterProvider
 } from "./models";
+import { artifactsSessionId, createArtifactsExtension } from "./extensions/artifacts";
 import { codemodeExtension } from "./extensions/codemode";
+import { createGitExtension } from "./extensions/git";
 import { createGitHubExtension, githubSetup } from "./extensions/github";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "./workspace";
 
@@ -42,6 +44,11 @@ export class PiAgent extends DurableObject<Env> {
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
     git: createGitClient(),
+    // This session's git repositories in Cloudflare Artifacts.
+    artifacts: {
+      binding: this.env.ARTIFACTS,
+      sessionId: artifactsSessionId(this.ctx.id.name ?? this.ctx.id.toString())
+    },
     backends: [
       new CodemodeBackend({
         id: JAVASCRIPT_BACKEND,
@@ -64,6 +71,9 @@ export class PiAgent extends DurableObject<Env> {
         sections: [{ key: "preamble", render: () => PREAMBLE, tag: false }],
         tools: createWorkspaceTools(this.workspace)
       });
+      this.registry.install(createGitExtension(this.workspace));
+      this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
+      // Paused: on only when the GitHub App is configured.
       if (this.github) {
         this.registry.install(createGitHubExtension(this.workspace, this.github));
       }
@@ -129,6 +139,30 @@ export class PiAgent extends DurableObject<Env> {
       options
     );
     return { status, operationId, text, reason };
+  }
+
+  /**
+   * This session's Artifacts repositories, each with its Git remote and a
+   * read-only token valid for an hour, so a person can fetch the agent's
+   * branches.
+   */
+  async shareRepos(): Promise<SharedRepo[]> {
+    const artifacts = this.workspace.artifacts;
+    const repos = await artifacts.list();
+    return Promise.all(
+      repos.map(async (repo) => {
+        const { remote } = await artifacts.get(repo.name);
+        const token = await artifacts.createToken(repo.name, "read", 60 * 60);
+        return {
+          name: repo.name,
+          remote,
+          defaultBranch: repo.defaultBranch,
+          lastPushAt: repo.lastPushAt,
+          readToken: token.plaintext,
+          expiresAt: token.expiresAt
+        };
+      })
+    );
   }
 
   /** The newest decisions this object logged, newest first. */
@@ -198,6 +232,15 @@ export type EventResult = {
   readonly operationId: string;
   readonly text?: string;
   readonly reason?: string;
+};
+
+export type SharedRepo = {
+  readonly name: string;
+  readonly remote: string;
+  readonly defaultBranch: string;
+  readonly lastPushAt: string | null;
+  readonly readToken: string;
+  readonly expiresAt: string;
 };
 
 export type LoggedDecision = {

@@ -26,6 +26,7 @@ import {
  * | POST   | /api/decide                   | DecisionModel only (dry run, no answer)       |
  * | POST   | /api/events                   | Router → DecisionModel → Pi agent → LLM       |
  * | GET    | /api/sessions/:id/decisions   | The decisions a session's object has logged   |
+ * | GET    | /api/sessions/:id/repos       | The session's Artifacts repos, with read tokens |
  *
  * When the API_TOKEN secret is set, every route but /api/health needs
  * `Authorization: Bearer <API_TOKEN>`.
@@ -168,6 +169,17 @@ app.get("/api/sessions/:id/decisions", async (c) => {
   if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
   const agent = piAgent(c.env, id);
   return c.json({ decisions: await agent.decisions(50) });
+});
+
+// Read access to the session's Artifacts repositories, so a person can
+// `git fetch` the agent's branches. It hands out tokens, so it needs API auth.
+app.get("/api/sessions/:id/repos", async (c) => {
+  if (!c.env.API_TOKEN) {
+    return c.json({ error: "Set the API_TOKEN secret first: this route hands out read tokens." }, 403);
+  }
+  const id = c.req.param("id");
+  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
+  return c.json({ repos: await piAgent(c.env, id).shareRepos() });
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

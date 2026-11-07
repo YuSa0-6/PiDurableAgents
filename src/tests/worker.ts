@@ -15,12 +15,16 @@ import { CodemodeBackend } from "@cloudflare/computer/backends/codemode";
 import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
+import { createArtifactsExtension, type ArtifactRepos } from "../extensions/artifacts";
 import { codemodeExtension } from "../extensions/codemode";
+import { createGitExtension } from "../extensions/git";
 import { createGitHubExtension, type GitHubSetup } from "../extensions/github";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "../workspace";
 
 /** The installation token the fake GitHub App hands out. */
 export const FAKE_TOKEN = "ghs_faketoken0123456789";
+/** Every token the fake Artifacts hands out starts with this. */
+export const FAKE_ARTIFACTS_TOKEN = "art_v1_fake";
 
 function textOf(content: Message["content"] | undefined): string {
   if (content === undefined) return "";
@@ -92,7 +96,9 @@ export class PiHarnessTestObject extends DurableObject<Env> {
         name: "workspace",
         tools: createWorkspaceTools(this.workspace)
       });
-      // As in production: GitHub tools (here against the fake GitHub), then code mode.
+      // As in production: git, Artifacts (here a fake), GitHub (a fake), then code mode.
+      this.registry.install(createGitExtension(this.workspace));
+      this.registry.install(createArtifactsExtension(this.workspace, this.#artifacts, { pollMs: 1 }));
       this.registry.install(createGitHubExtension(this.workspace, this.#github));
       this.registry.install(codemodeExtension());
       const models = createModels();
@@ -165,10 +171,65 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     fetch: this.#fakeGitHub
   };
 
-  /** Run one of the github extension's tools directly; its text output and error flag. */
-  async githubTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
-    const extension = createGitHubExtension(this.workspace, this.#github);
-    const tool = extension.tools?.find((candidate) => candidate.name === name);
+  // ------------------------------------------------------------ Artifacts
+  /** What the fake Artifacts client was asked, in order. */
+  readonly artifactsEvents: string[] = [];
+  readonly #repos = new Map<string, { defaultBranch: string; source: string | null; pendingReads: number }>();
+  #tokenCount = 0;
+
+  /** An in-memory Artifacts client. An import stays unreadable for two `get`s, as a real import is for a while. */
+  readonly #artifacts: ArtifactRepos = {
+    create: async (name, opts) => {
+      if (this.#repos.has(name)) throw new Error(`ALREADY_EXISTS: ${name}`);
+      this.#repos.set(name, { defaultBranch: opts?.setDefaultBranch ?? "main", source: null, pendingReads: 0 });
+      this.artifactsEvents.push(`create ${name}`);
+      return { name, remote: this.#remote(name), defaultBranch: opts?.setDefaultBranch ?? "main", token: `${FAKE_ARTIFACTS_TOKEN}_initial_${name}` };
+    },
+    get: async (name) => {
+      const repo = this.#repos.get(name);
+      if (!repo) throw new Error(`NOT_FOUND: ${name}`);
+      if (repo.pendingReads > 0) {
+        repo.pendingReads--;
+        this.artifactsEvents.push(`get ${name} (importing)`);
+        throw new Error(`NOT_READY: ${name}`);
+      }
+      return { name, remote: this.#remote(name), defaultBranch: repo.defaultBranch };
+    },
+    list: async () =>
+      [...this.#repos].map(([name, repo]) => ({ name, defaultBranch: repo.defaultBranch, lastPushAt: null, source: repo.source })),
+    import: async (name, source) => {
+      this.#repos.set(name, { defaultBranch: source.branch ?? "main", source: source.url, pendingReads: 2 });
+      this.artifactsEvents.push(`import ${name} from ${source.url}`);
+      return { name, remote: this.#remote(name), defaultBranch: source.branch ?? "main", token: `${FAKE_ARTIFACTS_TOKEN}_initial_${name}` };
+    },
+    createToken: async (name, scope) => {
+      const id = `t${++this.#tokenCount}`;
+      this.artifactsEvents.push(`token ${scope} ${name} ${id}`);
+      return { id, plaintext: `${FAKE_ARTIFACTS_TOKEN}_${id}?expires=1`, expiresAt: "2026-11-07T00:00:00Z" };
+    },
+    revokeToken: async (name, tokenOrId) => {
+      this.artifactsEvents.push(`revoke ${name} ${tokenOrId.startsWith(FAKE_ARTIFACTS_TOKEN) ? "initial" : tokenOrId}`);
+      return true;
+    }
+  };
+
+  #remote(name: string): string {
+    // Never resolves: a clone or push against it fails without leaving the machine.
+    return `https://fake-account.artifacts.invalid/git/d1agents/${name}.git`;
+  }
+
+  artifactsCalls(): string[] {
+    return [...this.artifactsEvents];
+  }
+
+  /** Run one tool of the git, artifacts or github extension directly; its text output and error flag. */
+  async runTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+    const extensions = [
+      createGitExtension(this.workspace),
+      createArtifactsExtension(this.workspace, this.#artifacts, { pollMs: 1 }),
+      createGitHubExtension(this.workspace, this.#github)
+    ];
+    const tool = extensions.flatMap((extension) => extension.tools ?? []).find((candidate) => candidate.name === name);
     if (!tool) throw new Error(`No tool ${name}`);
     const result = await tool.execute(args as never, {} as never, {} as never);
     const text = (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");

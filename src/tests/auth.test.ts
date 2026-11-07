@@ -18,6 +18,12 @@ describe("API auth", () => {
     expect((await call("/api/decide", { authorization: "Bearer s3cret" })).status).toBe(400);
   });
 
+  it("hands out repository read tokens only once API_TOKEN is set", async () => {
+    const open = await app.request("/api/sessions/demo/repos", {}, {} as unknown as Env);
+    expect(open.status).toBe(403);
+    expect((await app.request("/api/sessions/demo/repos", {}, env)).status).toBe(401);
+  });
+
   it("keeps the health check open", async () => {
     const response = await app.request("/api/health", {}, env);
     expect(response.status).toBe(200);

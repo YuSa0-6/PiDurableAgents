@@ -1,5 +1,5 @@
 import type { Workspace } from "@cloudflare/computer";
-import { defineTool, type Extension, type ToolExecutionResult, type ToolRegistration } from "@earendil-works/pi-durable";
+import { defineTool, type Extension, type ToolRegistration } from "@earendil-works/pi-durable";
 import { obj, opt, str } from "@earendil-works/pi-schema";
 import {
   GITHUB_API,
@@ -10,21 +10,27 @@ import {
   type Fetch,
   type RepoRef
 } from "../github/app";
+import {
+  BRANCH_PREFIX,
+  currentBranch,
+  fail,
+  guarded,
+  ok,
+  redacting,
+  Refusal,
+  requireAgentBranch,
+  workspacePath
+} from "./git";
 
 /**
  * pi extension: work on GitHub repositories through a GitHub App.
  *
- * Rules the tools enforce, whatever the model asks:
- * - only repositories on the allowlist (`GITHUB_REPOS`);
- * - push only the current branch, to the branch of the same name, and only
- *   branches under `agent/`; no force push, no delete, no other remote ref;
- * - the App's token goes only into request headers. It is never written to
- *   the workspace (so `exec` cannot read it) or returned to the model.
+ * Paused: the agent works in Cloudflare Artifacts (./artifacts.ts). This
+ * stays off until the App is configured (see `githubSetup`).
+ *
+ * Besides the shared rules in ./git.ts, only repositories on the allowlist
+ * (`GITHUB_REPOS`). Branch and commit come from the git extension.
  */
-
-export const BRANCH_PREFIX = "agent/";
-const BRANCH_PATTERN = /^agent\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
-const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@users.noreply.github.com" };
 
 /** The parts of the Worker's env this extension reads. */
 export type GitHubEnv = {
@@ -79,14 +85,6 @@ const CloneParameters = obj({
   dir: opt(str({ description: "Where to clone. Default: /workspace/<name>." })),
   ref: opt(str({ description: "Branch, tag or commit. Default: the default branch." }))
 });
-const BranchParameters = obj({
-  dir: DirParam,
-  name: str({ description: `New branch name. Must start with ${BRANCH_PREFIX}, e.g. agent/fix-typo.` })
-});
-const CommitParameters = obj({
-  dir: DirParam,
-  message: str({ description: "Commit message: a short summary line, a blank line, then details." })
-});
 const PushParameters = obj({ repo: RepoParam, dir: DirParam });
 const PullRequestParameters = obj({
   repo: RepoParam,
@@ -111,20 +109,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
     return { owner, name };
   };
 
-  const branchOf = async (dir: string): Promise<string> => {
-    const branch = await git.currentBranch({ dir });
-    if (!branch) throw new Refusal(`${dir} is not on a branch (detached HEAD).`);
-    return branch;
-  };
-
-  const requireAgentBranch = (branch: string): void => {
-    if (!BRANCH_PATTERN.test(branch) || branch.split("/").some((part) => /^\.+$/.test(part) || part.endsWith(".lock"))) {
-      throw new Refusal(
-        `Branch ${branch} is not allowed. Work on a branch under ${BRANCH_PREFIX}, ` +
-          "created with git_branch; the default branch is never pushed."
-      );
-    }
-  };
+  const branchOf = (dir: string) => currentBranch(workspace, dir);
 
   const api = async (token: string, path: string, init: RequestInit = {}): Promise<Response> =>
     setup.fetch(`${GITHUB_API}${path}`, {
@@ -145,7 +130,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
         const target = allowed(repo);
         const where = workspacePath(dir ?? `/workspace/${target.name}`);
         const token = await setup.app.token(target);
-        return redacting(token, async () => {
+        return redacting([token, btoa(`x-access-token:${token}`)], async () => {
           await git.clone({
             url: cloneUrl(target),
             dir: where,
@@ -157,39 +142,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
       })
     }),
     defineTool({
-      name: "git_branch",
-      description: `Create a branch under ${BRANCH_PREFIX} from HEAD and switch to it. Do this before committing.`,
-      parameters: BranchParameters,
-      replay: "unsafe",
-      execute: (args) =>
-        guarded(async () => {
-          const { dir, name } = args;
-        const where = workspacePath(dir);
-        requireAgentBranch(name);
-        await git.branch({ dir: where, name, checkout: true });
-        return ok(`Created ${name} in ${where} and switched to it.`);
-      })
-    }),
-    defineTool({
-      name: "git_commit",
-      description: "Stage every change in the working tree (new, modified and deleted files) and commit it.",
-      parameters: CommitParameters,
-      replay: "unsafe",
-      execute: (args) =>
-        guarded(async () => {
-          const { dir, message } = args;
-        const where = workspacePath(dir);
-        await git.add({ dir: where, paths: [], all: true });
-        const staged = (await git.status({ dir: where })).filter((entry) => entry.index !== " ");
-        if (staged.length === 0) return fail("Nothing to commit: the working tree matches HEAD.");
-        const { oid } = await git.commit({ dir: where, message, author: COMMIT_AUTHOR });
-        return ok(
-          `Committed ${staged.length} file(s) on ${await branchOf(where)} as ${oid.slice(0, 7)}.`
-        );
-      })
-    }),
-    defineTool({
-      name: "git_push",
+      name: "github_push",
       description: `Push the current branch (it must be under ${BRANCH_PREFIX}) to the same branch on GitHub.`,
       parameters: PushParameters,
       replay: "unsafe",
@@ -201,7 +154,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
         const branch = await branchOf(where);
         requireAgentBranch(branch);
         const token = await setup.app.token(target);
-        return redacting(token, async () => {
+        return redacting([token, btoa(`x-access-token:${token}`)], async () => {
           // The remote ref is the current branch's own name: no other target, no force, no delete.
           const result = await git.push({
             dir: where,
@@ -227,7 +180,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
         const target = allowed(repo);
         requireAgentBranch(branch);
         const token = await setup.app.token(target);
-        return redacting(token, async () => {
+        return redacting([token, btoa(`x-access-token:${token}`)], async () => {
           const path = `/repos/${target.owner}/${target.name}`;
           // Idempotent: a retried call finds the pull request it opened.
           const open = await api(
@@ -274,7 +227,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
           [
             `You can change these GitHub repositories: ${setup.repos.join(", ")}.`,
             "To change one: github_clone it, git_branch to a new branch under agent/, edit files, check your work,",
-            "git_commit, git_push, then create_pull_request with a title and a description of what changed and why.",
+            "git_commit, github_push, then create_pull_request with a title and a description of what changed and why.",
             "You cannot push the default branch or force push. Do not try to push or open pull requests with exec."
           ].join(" "),
         tag: false
@@ -286,65 +239,7 @@ export function createGitHubExtension(workspace: Workspace, setup: GitHubSetup):
 
 type PullRequest = { number: number; html_url: string; draft?: boolean };
 
-/** A rule the tool enforces; reported to the model as a tool error, not a crash. */
-class Refusal extends Error {}
-
 function cloneUrl(repo: RepoRef): string {
   // Credentials go in headers only: a URL with a token would be saved in .git/config.
   return `https://github.com/${repo.owner}/${repo.name}.git`;
-}
-
-/** An absolute path inside /workspace, normalised; anything else is refused. */
-export function workspacePath(path: string): string {
-  if (!path.startsWith("/")) throw new Refusal(`${path} is not an absolute path.`);
-  const parts: string[] = [];
-  for (const part of path.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") throw new Refusal(`${path} must not contain "..".`);
-    parts.push(part);
-  }
-  const normal = `/${parts.join("/")}`;
-  if (parts[0] !== "workspace" || parts.length < 2) {
-    throw new Refusal(`${path} is not inside /workspace.`);
-  }
-  return normal;
-}
-
-function ok(text: string): ToolExecutionResult {
-  return { output: [{ type: "text", text }] };
-}
-
-function fail(text: string): ToolExecutionResult {
-  return { output: [{ type: "text", text }], isError: true };
-}
-
-/** Report refusals and errors to the model as tool errors. */
-async function guarded(run: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult> {
-  try {
-    return await run();
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error));
-  }
-}
-
-/** Run `work`, removing `token` (raw and as git's Basic credential) from any result or error. */
-async function redacting(
-  token: string,
-  work: () => Promise<ToolExecutionResult>
-): Promise<ToolExecutionResult> {
-  const secrets = [token, btoa(`x-access-token:${token}`)];
-  const scrub = (text: string) =>
-    secrets.reduce((out, secret) => out.replaceAll(secret, "[redacted]"), text);
-  let result: ToolExecutionResult;
-  try {
-    result = await work();
-  } catch (error) {
-    result = fail(error instanceof Error ? error.message : String(error));
-  }
-  return {
-    ...result,
-    output: (result.output ?? []).map((part) =>
-      part.type === "text" ? { ...part, text: scrub(part.text) } : part
-    )
-  };
 }

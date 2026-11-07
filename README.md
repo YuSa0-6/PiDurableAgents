@@ -95,6 +95,7 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 | POST | `/api/decide` | DecisionModel だけを実行（実行モデルは呼ばない） |
 | POST | `/api/events` | Router → DecisionModel → Pi → LLM の全体を実行 |
 | GET | `/api/sessions/:id/decisions` | そのセッションの判定ログ（新しい順） |
+| GET | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン（`API_TOKEN` の設定が必要） |
 
 ### 認証
 
@@ -175,7 +176,39 @@ Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています�
 
 スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`createCodemodeSandbox` を差し替えるだけで済む作りです）。
 
-## GitHub への push と PR 作成
+## Artifacts（エージェントの git リポジトリ）
+
+エージェントのリポジトリは Cloudflare Artifacts（Git 互換の保存場所）に置きます。pi 拡張 `artifacts`（`src/extensions/artifacts.ts`）と `git`（`src/extensions/git.ts`）が担当します。
+
+| 項目 | 内容 |
+| --- | --- |
+| 名前空間 | `d1agents`（`cloudflare.config.ts` の `ARTIFACTS` binding） |
+| リポジトリの単位 | セッションごと。Artifacts 上では `<セッション名>__<リポジトリ名>` という名前になります |
+| 認証 | binding がリポジトリごと・10 分のトークンをその都度発行し、使い終わったら取り消します。秘密情報の設定は要りません |
+| 料金 | Workers Paid プランが必要。毎月 1 万回の操作と 1 GB までは無料（課金は 2026 年 11 月 12 日から） |
+
+| ツール | 内容 |
+| --- | --- |
+| `repo_import` | 公開されている Git リポジトリ（HTTPS）を取り込み、`/workspace` に clone する |
+| `repo_create` | 空のリポジトリを作り、`/workspace` に手元のリポジトリを用意する |
+| `repo_clone` | このセッションのリポジトリを `/workspace` に clone する |
+| `git_branch` | `agent/` で始まるブランチを作って切り替える |
+| `git_commit` | 作業ツリーの変更をすべて commit する |
+| `repo_push` | いまのブランチを、同じ名前のブランチに push する（`agent/` だけ） |
+| `repo_list` | このセッションのリポジトリの一覧 |
+
+エージェントの成果は、`/api/sessions/:id/repos` で受け取った remote と読み取り専用トークンを使って、手元の `git` で確かめます。
+
+```bash
+git -c http.extraHeader="Authorization: Bearer $READ_TOKEN" clone --branch agent/first "$REMOTE" review
+```
+
+トークンを remote の URL に入れないので、`.git/config` には残りません。
+
+## GitHub への push と PR 作成（停止中）
+
+いまはエージェントの作業場を Artifacts にしているため、GitHub App の準備は止めています。以下の仕組みはコードに残してありますが、設定しない限り動きません。push のツール名は `github_push` です（`git_branch` と `git_commit` は共通の `git` 拡張にあります）。
+
 
 pi 拡張 `github`（`src/extensions/github.ts`）が、GitHub App の権限でリポジトリを clone し、ブランチを切って commit・push し、PR を作ります。
 
@@ -256,6 +289,7 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと |
 | `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
 | `github-app.test.ts` | GitHub App の鍵（PKCS#1 / PKCS#8）の読み込み、JWT の署名、トークンの絞り込みとキャッシュ |
+| `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
 | `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、GitHub の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
 | `github-extension.test.ts` | branch・commit の動き、`agent/` 以外と許可外のリポジトリを断ること、PR 作成の重複防止、トークンが出力に出ないこと（GitHub は偽物の API で代用。実際の push はテストしていない） |
 

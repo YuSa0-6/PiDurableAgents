@@ -24,16 +24,16 @@ describe("code mode", () => {
     expect(result.text).toContain("beta");
   });
 
-  it("keeps the GitHub rules for calls made from a script", async () => {
+  it("keeps the push rules for calls made from a script", async () => {
     const stub = object();
-    await stub.gitRepo("/workspace/d1agents");
+    await stub.gitRepo("/workspace/demo");
     const result = await stub.prompt(
-      'codemode const r = await tools.git_push({ repo: "YuSa0-6/D1Agents", dir: "/workspace/d1agents" }); console.log(JSON.stringify(r));'
+      'codemode const r = await tools.repo_push({ name: "demo", dir: "/workspace/demo" }); console.log(JSON.stringify(r));'
     );
     expect(result.status).toBe("done");
     expect(result.text).toContain("Branch main is not allowed");
     // Refused before any token was minted.
-    expect((await stub.githubCalls()).tokens).toEqual([]);
+    expect(await stub.artifactsCalls()).toEqual([]);
   });
 
   it("stops a script that computes past its interrupt budget", async () => {

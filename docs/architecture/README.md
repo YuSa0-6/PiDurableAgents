@@ -64,7 +64,7 @@ DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確
 | ファイル操作 | read / write / edit / ls / find / grep | 変えない | 済 |
 | コード実行 | `exec`（JavaScript のみ、通信なし） | `exec` を順番に実行し、bash（`WorkerShellBackend`、just-bash）を足す。bash も Dynamic Worker で動く。ライブラリ側ではまだ実験的な機能 | 案 |
 | 本物の Linux | なし | Container で `npm install` / `npm test`（任意・費用あり） | 案 |
-| git | clone / status / diff / log | commit と push。GitHub の認証方法は未定 | 案 |
+| git | Artifacts（名前空間 `d1agents`）にセッションごとのリポジトリ。import・作成・branch・commit・`agent/` ブランチへの push | GitHub への反映（GitHub App は停止中） | 済（GitHub は案） |
 | 品質の測定 | 単体テスト 8 件 | 評価ランナーで成功率・コスト・時間を記録。拡張のあり・なしも比べる | 案 |
 | デプロイ | 手元から `cf deploy`（`cloudflare.config.ts`） | 変えない | 済 |
 

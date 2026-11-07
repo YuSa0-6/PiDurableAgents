@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vite-plus/test";
-import { githubSetup, parseRepos, workspacePath } from "../extensions/github";
+import { workspacePath } from "../extensions/git";
+import { githubSetup, parseRepos } from "../extensions/github";
 import { FAKE_TOKEN } from "./worker";
 
 const REPO = "YuSa0-6/D1Agents";
@@ -59,10 +60,10 @@ describe("the github tools", () => {
   it("branch under agent/ and commit every change", async () => {
     const stub = object();
     await stub.gitRepo(DIR);
-    expect((await stub.githubTool("git_branch", { dir: DIR, name: "agent/fix-readme" })).isError).toBe(false);
+    expect((await stub.runTool("git_branch", { dir: DIR, name: "agent/fix-readme" })).isError).toBe(false);
     await stub.writeWorkspaceFile(`${DIR}/README.md`, "hello, world\n");
     await stub.writeWorkspaceFile(`${DIR}/NEW.md`, "new\n");
-    const commit = await stub.githubTool("git_commit", { dir: DIR, message: "Fix the README" });
+    const commit = await stub.runTool("git_commit", { dir: DIR, message: "Fix the README" });
     expect(commit).toMatchObject({ isError: false });
     expect(commit.text).toMatch(/^Committed 2 file\(s\) on agent\/fix-readme as [0-9a-f]{7}\.$/);
     expect(await stub.gitLog(DIR)).toEqual(["Fix the README", "init"]);
@@ -71,21 +72,21 @@ describe("the github tools", () => {
   it("report a commit with nothing to commit as an error", async () => {
     const stub = object();
     await stub.gitRepo(DIR);
-    expect(await stub.githubTool("git_commit", { dir: DIR, message: "empty" })).toMatchObject({ isError: true });
+    expect(await stub.runTool("git_commit", { dir: DIR, message: "empty" })).toMatchObject({ isError: true });
   });
 
   it("refuse branches outside agent/", async () => {
     const stub = object();
     await stub.gitRepo(DIR);
     for (const name of ["main", "feature/x", "agent/..", "agent/a/../b", "agent/x.lock"]) {
-      expect((await stub.githubTool("git_branch", { dir: DIR, name })).isError).toBe(true);
+      expect((await stub.runTool("git_branch", { dir: DIR, name })).isError).toBe(true);
     }
   });
 
   it("refuse to push the default branch, before asking for a token", async () => {
     const stub = object();
     await stub.gitRepo(DIR);
-    const push = await stub.githubTool("git_push", { repo: REPO, dir: DIR });
+    const push = await stub.runTool("github_push", { repo: REPO, dir: DIR });
     expect(push.isError).toBe(true);
     expect(push.text).toContain("Branch main is not allowed");
     expect((await stub.githubCalls()).tokens).toEqual([]);
@@ -95,10 +96,10 @@ describe("the github tools", () => {
     const stub = object();
     for (const [name, args] of [
       ["github_clone", { repo: "someone/else" }],
-      ["git_push", { repo: "someone/else", dir: DIR }],
+      ["github_push", { repo: "someone/else", dir: DIR }],
       ["create_pull_request", { repo: "someone/else", branch: "agent/x", title: "t" }]
     ] as const) {
-      const result = await stub.githubTool(name, args);
+      const result = await stub.runTool(name, args);
       expect(result.isError).toBe(true);
       expect(result.text).toContain("not an allowed repository");
     }
@@ -108,9 +109,9 @@ describe("the github tools", () => {
   it("open a draft pull request once, and return it when asked again", async () => {
     const stub = object();
     const args = { repo: REPO, branch: "agent/fix-readme", title: "Fix the README", body: "Why" };
-    const first = await stub.githubTool("create_pull_request", args);
+    const first = await stub.runTool("create_pull_request", args);
     expect(first).toEqual({ isError: false, text: "Opened pull request #1 (draft): https://github.com/o/r/pull/1" });
-    const again = await stub.githubTool("create_pull_request", args);
+    const again = await stub.runTool("create_pull_request", args);
     expect(again.text).toBe("Pull request #1 is already open: https://github.com/o/r/pull/1");
 
     const { requests, tokens } = await stub.githubCalls();
