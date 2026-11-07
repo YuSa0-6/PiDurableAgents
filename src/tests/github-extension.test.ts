@@ -34,13 +34,17 @@ describe("the github extension's setup", () => {
   });
 
   it("calls the real fetch the way workerd allows", async () => {
-    // A stored global fetch called as a method throws "Illegal invocation".
+    // A stored global fetch called as a method throws "Illegal invocation"
+    // at once. An invalid URL keeps the test off the network.
     const setup = githubSetup(configured)!;
-    const error = await setup.fetch("http://127.0.0.1:1/").then(
-      () => undefined,
-      (reason: unknown) => String(reason)
-    );
-    expect(error ?? "").not.toMatch(/Illegal invocation/);
+    const error = await Promise.resolve()
+      .then(() => setup.fetch("not a url"))
+      .then(
+        () => "",
+        (reason: unknown) => String(reason)
+      );
+    expect(error).not.toMatch(/Illegal invocation/);
+    expect(error).toMatch(/URL/i);
   });
 
   it("keeps paths inside /workspace", () => {

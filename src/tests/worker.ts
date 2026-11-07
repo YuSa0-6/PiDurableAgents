@@ -15,6 +15,7 @@ import { CodemodeBackend } from "@cloudflare/computer/backends/codemode";
 import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
+import { codemodeExtension } from "../extensions/codemode";
 import { createGitHubExtension, type GitHubSetup } from "../extensions/github";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "../workspace";
 
@@ -34,7 +35,8 @@ function textOf(content: Message["content"] | undefined): string {
 /**
  * The faux model's script, derived from the transcript alone:
  *
- * - `read PATH` calls the workspace's `read`; anything else is echoed back.
+ * - `read PATH` calls the workspace's `read`; `codemode <script>` calls the
+ *   code mode tool with that script; anything else is echoed back.
  * - After a tool result it answers `tool said: <result>`.
  */
 function script(context: TranscriptContext): AssistantMessage {
@@ -49,6 +51,12 @@ function script(context: TranscriptContext): AssistantMessage {
     ]);
   }
   const prompt = last?.role === "user" ? textOf(last.content) : "";
+  const codemode = /^codemode ([\s\S]+)$/.exec(prompt);
+  if (codemode) {
+    return fauxAssistantMessage([fauxToolCall("codemode", { code: codemode[1] })], {
+      stopReason: "toolUse"
+    });
+  }
   const read = /^read (\S+)$/.exec(prompt);
   if (read) {
     return fauxAssistantMessage([fauxToolCall("read", { path: read[1] })], {
@@ -84,6 +92,9 @@ export class PiHarnessTestObject extends DurableObject<Env> {
         name: "workspace",
         tools: createWorkspaceTools(this.workspace)
       });
+      // As in production: GitHub tools (here against the fake GitHub), then code mode.
+      this.registry.install(createGitHubExtension(this.workspace, this.#github));
+      this.registry.install(codemodeExtension());
       const models = createModels();
       models.setProvider(this.#faux.provider);
       return Harness.open(

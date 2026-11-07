@@ -35,6 +35,7 @@ pi の拡張は、ツール（`tools`）、システムプロンプトの段落�
 | 検証 | `onYield` で「テストが通るまで続ける」 | pi 拡張 | 案 |
 | 要約 | `beforeCompact` でコーディング向けに残すものを決める | pi 拡張 | 案 |
 | サブエージェント | `tools` と `tasks`。止まっても再開できる | pi 拡張 | 案 |
+| Code Mode | スクリプトから自分のツールをまとめて呼ぶ（`createCodemodeExtension`、QuickJS を Durable Object の中で動かす） | pi 拡張 | 済 |
 | Workspace ツール | いまの `playground` 拡張。bash と順番実行を足す | pi 拡張 | 済（bash と順番実行は案） |
 | DecisionModel | 送る前に `session.setModel()` でモデルを切り替える。pi の割り込みには「この依頼だけモデルを変える」場所がないため | アプリ側 | 済 |
 | 認証・API・SSE | Pi は通信の方法を決めない設計 | アプリ側 | 案 |

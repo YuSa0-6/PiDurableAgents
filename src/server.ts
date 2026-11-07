@@ -15,11 +15,18 @@ import {
   executionModels,
   gatewayOpenRouterProvider
 } from "./models";
+import { codemodeExtension } from "./extensions/codemode";
 import { createGitHubExtension, githubSetup } from "./extensions/github";
 import { createWorkspaceTools, JAVASCRIPT_BACKEND } from "./workspace";
 
-const PREAMBLE =
-  "You are a concise assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language. You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there, and run JavaScript modules in it with exec, which can also use git. Paths are absolute. Use tools whenever they can answer the request, and explain their results plainly.";
+const PREAMBLE = [
+  "You are a concise coding assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language.",
+  "You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there. Paths are absolute.",
+  "Two tools run code, for different jobs:",
+  "- exec runs a JavaScript module inside the workspace, with node:fs and git. Use it to compute over files.",
+  "- codemode runs a script that calls your other tools as tools.<name>(args). Use it to do many tool calls in one step, such as reading or searching many files, or a fixed sequence of tool calls.",
+  "Use tools whenever they can answer the request, and explain their results plainly."
+].join("\n");
 
 /** One Pi Durable session per Durable Object, driven over HTTP. */
 export class PiAgent extends DurableObject<Env> {
@@ -60,6 +67,8 @@ export class PiAgent extends DurableObject<Env> {
       if (this.github) {
         this.registry.install(createGitHubExtension(this.workspace, this.github));
       }
+      // Code mode last: its prompt section lists the tools installed above.
+      this.registry.install(codemodeExtension());
       const models = createModels();
       models.setProvider(this.ai.provider);
       // OpenRouter models, streamed through the gateway.

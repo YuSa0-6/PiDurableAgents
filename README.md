@@ -153,6 +153,28 @@ curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisi
 
 どのモデルが実際に答えたかは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログでも確認できます。
 
+## Code Mode
+
+Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています。モデルは JavaScript のスクリプトを 1 つ書き、その中で自分のツールを `tools.<名前>(引数)` として呼びます。たくさんのファイルを読む、決まった順でツールを呼ぶ、といった作業を 1 回の呼び出しで済ませられます。
+
+| 項目 | 内容 |
+| --- | --- |
+| 部品 | `@earendil-works/pi-durable/codemode` の `createCodemodeExtension` と、`@earendil-works/pi-codemode/cloudflare` の `createInlineCodemodeSandbox` |
+| 実行場所 | QuickJS（WebAssembly）を、PiAgent の Durable Object の中で動かす |
+| 止まっても続く | ツールの結果を 1 つずつ記録しておき、Durable Object が再起動したら、スクリプトを最初から同じ結果で再生して続きから動かす |
+| 制限 | 計算だけで進められるのは約 3 秒（割り込み 30,000 回）、メモリ 32 MB、全体で 5 分 |
+| `models.*` | 使わない（`models: false`）。スクリプトからモデルを何度も呼ぶと、DecisionModel を通らずに費用がかかるため |
+| ツールの決まり | スクリプトから呼んでも同じ。たとえば `tools.git_push` で `main` を push しようとしても断られる |
+
+コードを動かすツールは 2 つあり、役割が違います。
+
+| ツール | 動くもの | 向いている作業 |
+| --- | --- | --- |
+| `exec` | ワークスペースの中の JavaScript（`node:fs` と git が使える） | ファイルを読んで計算する |
+| `codemode` | エージェント自身のツールを呼ぶスクリプト | ツールをまとめて何度も呼ぶ |
+
+スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`createCodemodeSandbox` を差し替えるだけで済む作りです）。
+
 ## GitHub への push と PR 作成
 
 pi 拡張 `github`（`src/extensions/github.ts`）が、GitHub App の権限でリポジトリを clone し、ブランチを切って commit・push し、PR を作ります。
@@ -234,6 +256,7 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと |
 | `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
 | `github-app.test.ts` | GitHub App の鍵（PKCS#1 / PKCS#8）の読み込み、JWT の署名、トークンの絞り込みとキャッシュ |
+| `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、GitHub の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
 | `github-extension.test.ts` | branch・commit の動き、`agent/` 以外と許可外のリポジトリを断ること、PR 作成の重複防止、トークンが出力に出ないこと（GitHub は偽物の API で代用。実際の push はテストしていない） |
 
 ## ローカルで動かす
