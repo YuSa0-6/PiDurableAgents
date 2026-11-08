@@ -65,19 +65,19 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 | --- | --- | --- |
 | GET | `/api/health` | 動作確認と、使っているモデル |
 | POST | `/api/events` | エージェントに依頼する |
-| GET | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン（`API_TOKEN` の設定が必要） |
+| GET | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン |
 
 ### 認証
 
-Worker の secret `API_TOKEN` を設定すると、`/api/health` 以外のすべての API に `Authorization: Bearer <API_TOKEN>` が必要になります。設定していないあいだは、誰でも呼べます（`/api/health` の `auth` が `none` になります）。
+Worker 全体を Cloudflare Access で守っています。ログインできるのは、この Cloudflare アカウントのメンバーだけです（Access のアプリ名は `d1agents-pi-durable - Cloudflare Workers`、ポリシーは「Cloudflare account members」）。
 
-```bash
-pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
-```
+| 使う場面 | 方法 |
+| --- | --- |
+| ブラウザ | URL を開くと Cloudflare のログイン画面が出る |
+| 手元の `curl` | `cloudflared access curl <URL>` を使う（初回だけブラウザでログイン） |
+| Webhook や自動化 | Access のサービストークンを作り、`CF-Access-Client-Id` と `CF-Access-Client-Secret` のヘッダーを付ける（ポリシーにサービストークンの許可を足す） |
 
-`cf` は beta のため、secret を 1 つだけ登録するコマンドがまだありません。secret の登録だけは Wrangler を使います（設定ファイルを読まないので、`--name` で Worker 名を渡します）。
-
-`/api/sessions/:id/repos`（読み取りトークンを渡す入口）は、`API_TOKEN` が設定されているときだけ使えます。
+Worker は、Access を通った依頼（`ctx.access` があるもの）だけを受け付けます。Access を通っていない依頼は 403 を返します。秘密情報の設定はありません。
 
 `/api/events` の入力:
 
@@ -91,22 +91,18 @@ pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
 
 ### 試す
 
-`API_TOKEN` を設定したあとは、手元の環境変数に同じ値を入れてから実行します。
-
-```bash
-export D1AGENTS_TOKEN='<API_TOKEN と同じ値>'
-```
+`cloudflared`（Cloudflare のコマンド）をインストールしておきます。初回はブラウザで Access にログインします。
 
 依頼する:
 
 ```bash
-curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
+cloudflared access curl https://d1agents-pi-durable.itumens.workers.dev/api/events -X POST -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
 ```
 
 エージェントの成果（Artifacts のリポジトリ）を受け取る:
 
 ```bash
-curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos -H "authorization: Bearer $D1AGENTS_TOKEN"
+cloudflared access curl https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos
 ```
 
 モデルへのリクエストは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログで確認できます。
@@ -173,7 +169,7 @@ GitHub App で push と PR を作る仕組みは、Artifacts に切り替えた�
 | `cf` CLI（beta） | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作 | `pnpm start` / `pnpm build` / `pnpm run deploy` / `pnpm types` |
 | Vite（Vite+ と Cloudflare Vite プラグイン beta） | `cf` が中で使うビルド | `vite.config.ts` |
 | Hono | Event Router | `src/router.ts` |
-| Wrangler | secret の登録（`cf` が未対応のため）と、テスト用の設定 | `pnpm exec wrangler secret put <名前> --name d1agents-pi-durable` |
+| Wrangler | ログを流して見る（`cf` が未対応のため）と、テスト用の設定 | `pnpm exec wrangler tail d1agents-pi-durable` |
 | Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test` |
 
 Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wrangler.jsonc` から `cf migrate` で移行しました。バインディングと実行環境の型は `cf` が `.cloudflare/types/` に生成します（`pnpm typecheck` が先に生成します）。
@@ -192,7 +188,6 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | テスト | 確かめること |
 | --- | --- |
 | `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること |
-| `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
 | `git.test.ts` | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること |
 | `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
 | `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
@@ -207,7 +202,9 @@ pnpm install
 pnpm start
 ```
 
-起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` バインディングはリモートで動かすため、`cf auth login` でログインしておく必要があります（`cf` は Wrangler のログインを使いません）。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
+起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` と `ARTIFACTS` はリモートで動かすため、`cf auth login` でログインしておく必要があります（`cf` は Wrangler のログインを使いません）。
+
+Access はプレビューも守るので、`pnpm start` は起動時に Access のログインを求めます。対話できない環境（CI やクラウドのエージェント）では、Access のサービストークンを `CLOUDFLARE_ACCESS_CLIENT_ID` と `CLOUDFLARE_ACCESS_CLIENT_SECRET` に入れておきます。ローカルの Worker の中では、`cloudflare.config.ts` の `access.dev` がログイン済みの状態を模擬します。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
 
 ## デプロイ
 

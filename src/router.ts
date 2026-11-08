@@ -68,29 +68,21 @@ function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent>
 export const app = new Hono<{ Bindings: Env }>();
 
 app.use("/api/*", async (c, next) => {
-  const expected = c.env.API_TOKEN;
-  if (!expected || c.req.path === "/api/health") return next();
-  const given = c.req.header("authorization")?.match(/^Bearer (.+)$/)?.[1] ?? "";
-  if (!(await sameSecret(given, expected))) {
-    return c.json({ error: "Unauthorized" }, 401, { "www-authenticate": "Bearer" });
-  }
+  if (!accessOf(c)) return c.json({ error: "Sign in with Cloudflare Access" }, 403);
   return next();
 });
 
-async function sameSecret(a: string, b: string): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const [x, y] = await Promise.all(
-    [a, b].map(async (value) => new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))))
-  );
-  let diff = 0;
-  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
-  return diff === 0;
+function accessOf(c: Context<{ Bindings: Env }>): CloudflareAccessContext | undefined {
+  try {
+    return (c.executionCtx as ExecutionContext).access;
+  } catch {
+    return undefined;
+  }
 }
 
 app.get("/api/health", (c) =>
   c.json({
     ok: true,
-    auth: c.env.API_TOKEN ? "bearer" : "none",
     model: MODEL_ID
   })
 );
@@ -102,12 +94,9 @@ app.post("/api/events", async (c) => {
   return c.json({ event, result });
 });
 
-app.get("/api/sessions/:id/repos", async (c) => {
-  if (!c.env.API_TOKEN) {
-    return c.json({ error: "Set the API_TOKEN secret first: this route hands out read tokens." }, 403);
-  }
-  return c.json({ repos: await sessionAgent(c).shareRepos() });
-});
+app.get("/api/sessions/:id/repos", async (c) =>
+  c.json({ repos: await sessionAgent(c).shareRepos() })
+);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
