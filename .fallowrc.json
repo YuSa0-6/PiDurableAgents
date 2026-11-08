@@ -8,12 +8,14 @@
     "@earendil-works/pi-telemetry",
     // pi-ai and pi-schema need exactly typebox 1.3.27 (see dependabot.yml).
     "typebox",
-    // A CLI, run as `pnpm exec cf` (see README "ツールチェーン").
-    "cf"
-  ],
-  "duplicates": {
-    // Reviewed: src/tests/worker.ts copies the socket wiring of
-    // src/server.ts on purpose, so the tests run the same wiring.
-    "ignoredClones": ["dup:84d8301f:2"]
-  }
+    // A peer dependency of agents' Pi harness (pi-durable needs it at run time).
+    "@earendil-works/chord",
+    // Peer dependencies of @cloudflare/computer.
+    "@platformatic/vfs",
+    "zod",
+    // CLIs, run as `pnpm exec cf` and `pnpm exec wrangler` (see README "ツールチェーン").
+    // Wrangler is only for what cf beta lacks: secrets and tail.
+    "cf",
+    "wrangler"
+  ]
 }

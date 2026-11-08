@@ -11,8 +11,6 @@ export default defineConfig({
     })
   ],
   resolve: {
-    // Resolve every pi package from this example, so the harness and the
-    // tests share one copy of pi's module state.
     dedupe: [
       "@earendil-works/chord",
       "@earendil-works/pi-ai",
@@ -21,7 +19,7 @@ export default defineConfig({
     ]
   },
   test: {
-    name: "next-pi-harness",
+    name: "d1agents",
     include: [path.join(testsDir, "**/*.test.ts")],
     testTimeout: 30_000,
     hookTimeout: 30_000

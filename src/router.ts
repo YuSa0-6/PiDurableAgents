@@ -1,50 +1,20 @@
-import { routeAgentRequest } from "agents";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import {
-  DECISION_MODEL,
-  decide,
-  MIN_CONFIDENCE,
-  type RouterEvent
-} from "./decision-model";
-import {
-  DEFAULT_MODEL,
-  EXECUTION_MODELS,
-  isExecutionModel,
-  type ExecutionModelId
-} from "./models";
+import type { PiAgent } from "./agent";
+import type { RouterEvent } from "./event";
+import { MODEL_ID } from "./model";
 
-/**
- * Event Router (Hono): the entry point for every event.
- *
- *   HTTP / webhook ──▶ Event Router ──▶ DecisionModel (d1.1) ──▶ PiAgent (Pi Durable) ──▶ OpenRouter LLM
- *   Browser chat   ──▶ /agents/pi-agent/<session> (WebSocket) ──▶ same DecisionModel hook
- *
- * | Method | Path                          | What it does                                  |
- * | ------ | ----------------------------- | --------------------------------------------- |
- * | GET    | /api/health                   | Liveness and the routing policy               |
- * | GET    | /api/session                  | A fresh session id                            |
- * | POST   | /api/decide                   | DecisionModel only (dry run, no answer)       |
- * | POST   | /api/events                   | Router → DecisionModel → Pi agent → LLM       |
- * | GET    | /api/sessions/:id/decisions   | The decisions a session's object has logged   |
- * | GET    | /agents/pi-agent/:id          | WebSocket for the browser UI                  |
- */
-
-/** The JSON body `/api/events` and `/api/decide` accept. */
 type EventBody = {
   readonly text?: unknown;
   readonly session?: unknown;
   readonly source?: unknown;
   readonly type?: unknown;
   readonly id?: unknown;
-  /** Default true: wait for the answer. False: return once Pi has the event. */
   readonly wait?: unknown;
-  /** An execution model id to use instead of asking the DecisionModel. */
-  readonly model?: unknown;
 };
 
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_TEXT = 8000;
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback;
@@ -54,14 +24,16 @@ function badRequest(message: string): HTTPException {
   return new HTTPException(400, { message });
 }
 
-/** Normalise any accepted body into a RouterEvent. */
 function normalise(body: EventBody): RouterEvent {
   const session = str(body.session, "default");
   if (!SESSION_PATTERN.test(session)) {
     throw badRequest("session must match [A-Za-z0-9_-]{1,64}");
   }
-  if (typeof body.text !== "string") {
-    throw badRequest("text (string) is required");
+  if (typeof body.text !== "string" || body.text.trim().length === 0) {
+    throw badRequest("text (non-empty string) is required");
+  }
+  if (body.text.length > MAX_TEXT) {
+    throw badRequest(`text must be at most ${MAX_TEXT} characters`);
   }
   return {
     id: str(body.id, crypto.randomUUID()),
@@ -71,16 +43,6 @@ function normalise(body: EventBody): RouterEvent {
     session,
     receivedAt: new Date().toISOString()
   };
-}
-
-function override(body: EventBody): ExecutionModelId | undefined {
-  if (body.model === undefined) return undefined;
-  if (typeof body.model !== "string" || !isExecutionModel(body.model)) {
-    throw badRequest(
-      `model must be one of: ${EXECUTION_MODELS.map((model) => model.id).join(", ")}`
-    );
-  }
-  return body.model;
 }
 
 async function readJson(request: Request): Promise<EventBody> {
@@ -93,53 +55,58 @@ async function readJson(request: Request): Promise<EventBody> {
   }
 }
 
+function agentOf(env: Env, session: string): DurableObjectStub<PiAgent> {
+  return (env.PiAgent as unknown as DurableObjectNamespace<PiAgent>).getByName(session);
+}
+
+function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent> {
+  const id = c.req.param("id") ?? "";
+  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
+  return agentOf(c.env, id);
+}
+
 export const app = new Hono<{ Bindings: Env }>();
 
-app.use("/api/*", cors());
+app.use("/api/*", async (c, next) => {
+  const expected = c.env.API_TOKEN;
+  if (!expected || c.req.path === "/api/health") return next();
+  const given = c.req.header("authorization")?.match(/^Bearer (.+)$/)?.[1] ?? "";
+  if (!(await sameSecret(given, expected))) {
+    return c.json({ error: "Unauthorized" }, 401, { "www-authenticate": "Bearer" });
+  }
+  return next();
+});
+
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [x, y] = await Promise.all(
+    [a, b].map(async (value) => new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))))
+  );
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
 
 app.get("/api/health", (c) =>
   c.json({
     ok: true,
-    flow: "Event Router (Hono) → DecisionModel (Liquid d1.1) → PiAgent (Pi Durable) → OpenRouter LLM",
-    decisionModel: DECISION_MODEL,
-    minConfidence: MIN_CONFIDENCE,
-    defaultModel: DEFAULT_MODEL,
-    executionModels: EXECUTION_MODELS
+    auth: c.env.API_TOKEN ? "bearer" : "none",
+    model: MODEL_ID
   })
 );
-
-// A fresh session id for the client to open its WebSocket against.
-app.get("/api/session", (c) => c.json({ session: crypto.randomUUID() }));
-
-app.post("/api/decide", async (c) => {
-  const body = await readJson(c.req.raw);
-  const event = normalise(body);
-  return c.json({ event, decision: await decide(c.env, event, override(body)) });
-});
 
 app.post("/api/events", async (c) => {
   const body = await readJson(c.req.raw);
   const event = normalise(body);
-  const decision = await decide(c.env, event, override(body));
-  if (decision.action === "reject") {
-    return c.json({ event, decision }, 422);
+  const result = await agentOf(c.env, event.session).handleEvent(event, body.wait !== false);
+  return c.json({ event, result });
+});
+
+app.get("/api/sessions/:id/repos", async (c) => {
+  if (!c.env.API_TOKEN) {
+    return c.json({ error: "Set the API_TOKEN secret first: this route hands out read tokens." }, 403);
   }
-  const agent = c.env.PiAgent.getByName(event.session);
-  const result = await agent.handleEvent(event, decision, body.wait !== false);
-  return c.json({ event, decision, result });
-});
-
-app.get("/api/sessions/:id/decisions", async (c) => {
-  const id = c.req.param("id");
-  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
-  const agent = c.env.PiAgent.getByName(id);
-  return c.json({ decisions: await agent.decisions(50) });
-});
-
-// WebSockets for the browser UI: the Agents SDK routes /agents/<agent>/<name>.
-app.all("/agents/*", async (c) => {
-  const response = await routeAgentRequest(c.req.raw, c.env, { cors: true });
-  return response ?? c.json({ error: "Not found" }, 404);
+  return c.json({ repos: await sessionAgent(c).shareRepos() });
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

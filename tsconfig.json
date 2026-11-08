@@ -1,11 +1,9 @@
 {
   "extends": "agents/tsconfig",
   "compilerOptions": {
-    "types": [
-      "@cloudflare/workers-types",
-      "@cloudflare/vitest-plugin/types",
-      "vite/client"
-    ],
+    // cloudflare.config.ts imports the Worker with an import attribute.
+    "module": "esnext",
+    "types": ["@cloudflare/vitest-plugin/types", "vite/client"],
     "paths": {
       "@earendil-works/chord": [
         "./node_modules/@earendil-works/chord/dist/index.d.ts"
@@ -33,5 +31,5 @@
       ]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "env.d.ts"]
+  "include": ["src/**/*.ts", "cloudflare.config.ts", ".cloudflare/types"]
 }

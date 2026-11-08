@@ -4,24 +4,29 @@ import {
   type CreatePiToolsOptions,
   type PiTool
 } from "@cloudflare/computer/tools/pi-ai";
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { Extension, ToolRegistration } from "@earendil-works/pi-durable";
 
-/** The id of the Workspace's one backend, which `exec` runs on. */
+const PREAMBLE = [
+  "You are a concise coding assistant. Answer in the user's language.",
+  "You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there. Paths are absolute.",
+  "Two tools run code, for different jobs:",
+  "- exec runs a JavaScript module inside the workspace, with node:fs and git. Use it to compute over files.",
+  "- codemode runs a script that calls your other tools as tools.<name>(args). Use it to do many tool calls in one step, such as reading or searching many files, or a fixed sequence of tool calls.",
+  "Use tools whenever they can answer the request, and explain their results plainly."
+].join("\n");
+
+export function createWorkspaceExtension(workspace: Workspace): Extension {
+  return {
+    name: "workspace",
+    sections: [{ key: "preamble", render: () => PREAMBLE, tag: false }],
+    tools: createWorkspaceTools(workspace)
+  };
+}
+
 export const JAVASCRIPT_BACKEND = "javascript";
 
-/**
- * Tools that can run again after an eviction cut them off. Reads and
- * searches have no effect, `write` replaces the whole file, and `delete`
- * succeeds on a missing path. `edit` would fail to find text it already
- * replaced, and `exec` runs arbitrary code, so pi hands the model an
- * interrupted result for those instead.
- */
 const REPLAY_SAFE = new Set(["read", "ls", "find", "grep", "write", "delete"]);
 
-/**
- * The shared `exec` description is written for a choice of shell backends.
- * This Workspace has one JavaScript backend, so say what that is instead.
- */
 const EXEC_DESCRIPTION = `Run JavaScript in the workspace. \`command\` is the source of an ES module, run in a fresh sandboxed isolate with no network access. If the module default-exports a function, it is called with \`input\` and its return value comes back as \`result\`. console.log and console.error go to stdout and stderr. There is no shell, npm or package install: the only imports are these two, plus relative imports of .js files in the workspace.
 
 - \`node:fs/promises\`: the workspace files, async only (readFile, writeFile, mkdir, rm, readdir, stat, lstat, access). readFile takes "utf8" for text.
@@ -62,19 +67,14 @@ export default async function () {
   return (await log({ dir: "/workspace/hello" })).map((c) => \`\${c.oid.slice(0, 7)} \${c.message.split("\\n")[0]}\`);
 }
 
-Prefer the read, write and edit tools for plain file changes.`;
+Prefer the read, write and edit tools for plain file changes. Pushing is not possible from exec: use the repo_push tool.`;
 
 const COMMAND_DESCRIPTION =
   "ES module source to run. Default-export a function to receive `input` and return a result.";
 
-/** `exec`'s declaration, described for the JavaScript backend. */
 function describeExec(tool: PiTool): PiTool {
   const properties = tool.parameters.properties ?? {};
   const command = properties.command;
-  // `input` is any JSON object. computer describes "any JSON value" with a
-  // recursive `definitions` entry, which Gemini rejects ("ref loops ... of
-  // required fields"). A plain object with any properties means the same to
-  // the model and has no recursion.
   const { definitions: _definitions, ...parameters } = tool.parameters as typeof tool.parameters & {
     definitions?: unknown;
   };
@@ -99,17 +99,7 @@ function describeExec(tool: PiTool): PiTool {
   };
 }
 
-/**
- * The Workspace tools from `@cloudflare/computer/tools/pi-ai`, as
- * pi-durable `ToolRegistration`s.
- *
- * `createPiTools` returns pi-ai declarations and one `execute` that runs a
- * call, for a hand-written agent loop. pi-durable runs the loop itself and
- * wants each tool to carry its own `execute`, so this pairs them up by
- * name. `execute` validates the arguments against the tool's schema and
- * reports failures as `isError` results rather than throwing.
- */
-export function createWorkspaceTools(
+function createWorkspaceTools(
   workspace: Workspace,
   options: Omit<CreatePiToolsOptions, "workspace" | "shell"> = {}
 ): ToolRegistration[] {
@@ -131,8 +121,6 @@ export function createWorkspaceTools(
     return {
       name: tool.name,
       description: tool.description,
-      // Plain JSON Schema: pi validates it with pi-schema, but
-      // computer's schema type is untyped, so `args` is too.
       parameters: tool.parameters,
       ...(tool.constrainedSampling
         ? { constrainedSampling: tool.constrainedSampling }
