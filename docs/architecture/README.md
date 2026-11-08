@@ -11,13 +11,13 @@ D1Agents の「いまの構成」と「目指す構成（案）」を並べた�
 
 HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネットワークなしでブラウザで開けます。PNG は HTML をそのまま撮ったものです。
 
-図は Cloudflare Artifacts に切り替える前に描いたものです（git の相手が GitHub になっています）。いまの構成は、下の 2 つの表のほうが正確です。
+現状の図は Cloudflare Artifacts に切り替えたあとの構成です。期待値の図は切り替え前に描いたもので、git の相手が GitHub のままです（期待値の中身は下の表のほうが正確です）。
 
 ## 現状
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="current-dark.png">
-  <img src="current.png" alt="現状の構成図：開発者が認証なしの HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は DecisionModel で入力チェックと d1.1 によるモデル選びをし、RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter のモデルを呼ぶ。pi 拡張は playground の 1 つで、Workspace ツールが Dynamic Worker で JavaScript を実行し、GitHub から clone だけできる" width="100%">
+  <img src="current.png" alt="現状の構成図：開発者が Bearer 認証付きの HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は DecisionModel で入力チェックと d1.1 によるモデル選びをし、RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter のモデルを呼び、pi 拡張 workspace・git・artifacts・codemode を読み込む。workspace は Dynamic Worker で JavaScript を実行し、artifacts はセッションごとの Artifacts リポジトリに clone と push をする。Artifacts は GitHub の公開リポジトリを取り込める。開発者は読み取りトークンで Artifacts から git fetch する" width="100%">
 </picture>
 
 ## 期待値（案）
