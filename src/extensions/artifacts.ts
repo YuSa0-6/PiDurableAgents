@@ -14,37 +14,19 @@ import {
   workspacePath
 } from "./git";
 
-/**
- * pi extension: the agent's own git repositories in Cloudflare Artifacts.
- *
- * Each session has its own repositories (the Workspace scopes the Artifacts
- * client to the session). The agent imports a repository from a public Git
- * URL or creates an empty one, clones it into /workspace, works on an
- * `agent/` branch and pushes it back. People read the work with a read token
- * from `GET /api/sessions/:id/repos`.
- *
- * Besides the shared rules in ./git.ts: every operation mints its own token,
- * for one repository and a few minutes, and revokes it when done.
- */
-
-/** The Artifacts client calls this extension makes: `workspace.artifacts`, or a fake in tests. */
 export type ArtifactsClient = Pick<
   ArtifactClient,
   "create" | "get" | "list" | "import" | "createToken" | "revokeToken"
 >;
 
-/** Seconds a token for one clone or push lives. */
 const OPERATION_TOKEN_TTL = 10 * 60;
-/** How long to wait for an import to become readable. */
 const IMPORT_WAIT_MS = 90_000;
 const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
 export type ArtifactsOptions = {
-  /** Wait between readiness checks of an import; tests shorten it. */
   readonly pollMs?: number;
 };
 
-/** HTTP headers for git over HTTPS to Artifacts. */
 function gitHeaders(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` };
 }
@@ -59,7 +41,6 @@ function repoName(name: string): string {
   return trimmed;
 }
 
-/** The repository name a Git URL suggests: its last path segment without `.git`. */
 export function nameFromUrl(url: string): string {
   const last = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "repo";
   return last.replace(/\.git$/, "").replace(/[^A-Za-z0-9._-]/g, "-").replace(/^[^A-Za-z0-9]+/, "") || "repo";
@@ -73,7 +54,6 @@ export function createArtifactsExtension(
   const git = workspace.git;
   const pollMs = options.pollMs ?? 2_000;
 
-  /** Run `work` with a fresh token for `name`, then revoke it; the token never reaches the output. */
   const withToken = async (
     name: string,
     scope: "read" | "write",
@@ -90,12 +70,10 @@ export function createArtifactsExtension(
 
   const clone = (name: string, dir: string, ref?: string) =>
     withToken(name, "read", async (token, remote) => {
-      // Credentials go in headers only: a URL with a token would be saved in .git/config.
       await git.clone({ url: remote, dir, ...(ref ? { ref } : {}), headers: gitHeaders(token) });
       return ok(`Cloned ${name} into ${dir} on ${await currentBranch(workspace, dir)}.`);
     });
 
-  /** An import is readable once `get` stops throwing. */
   const waitUntilReady = async (name: string): Promise<void> => {
     const deadline = Date.now() + IMPORT_WAIT_MS;
     for (;;) {
@@ -109,7 +87,6 @@ export function createArtifactsExtension(
     }
   };
 
-  /** Revoke the token create() and import() hand back; each operation mints its own. */
   const dropInitialToken = (name: string, token: string) =>
     artifacts.revokeToken(name, token).catch(() => false);
 
@@ -215,7 +192,6 @@ export function createArtifactsExtension(
             const branch = await currentBranch(workspace, dir);
             requireAgentBranch(branch);
             return withToken(name, "write", async (token, remote) => {
-              // The remote ref is the current branch's own name: no other target, no force, no delete.
               const result = await git.push({
                 dir,
                 url: remote,
@@ -255,10 +231,6 @@ function textOf(result: ReturnType<typeof ok>): string {
   return (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");
 }
 
-/**
- * The Artifacts scope for a session: its name when Artifacts accepts it as
- * a repository-name prefix, else a sanitised form under `s-`.
- */
 export function artifactsSessionId(session: string): string {
   if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(session) && !session.includes("__")) return session;
   return `s-${session.replace(/_+/g, "-").replace(/[^A-Za-z0-9._-]/g, "-")}`;

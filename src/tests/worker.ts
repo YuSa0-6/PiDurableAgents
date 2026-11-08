@@ -21,7 +21,6 @@ import { createCodemodeExtension } from "../extensions/codemode";
 import { createGitExtension } from "../extensions/git";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../extensions/workspace";
 
-/** Every token the fake Artifacts hands out starts with this. */
 export const FAKE_ARTIFACTS_TOKEN = "art_v1_fake";
 
 function textOf(content: Message["content"] | undefined): string {
@@ -34,16 +33,7 @@ function textOf(content: Message["content"] | undefined): string {
     .join("");
 }
 
-/**
- * The faux model's script, derived from the transcript alone:
- *
- * - `read PATH` calls the workspace's `read`; `codemode <script>` calls the
- *   code mode tool with that script; anything else is echoed back.
- * - After a tool result it answers `tool said: <result>`.
- */
 function script(context: TranscriptContext): AssistantMessage {
-  // pi places system-prompt changes positionally, so a system message can
-  // follow the user's input.
   const last = context.messages.filter((m) => m.role !== "system").at(-1);
   if (last?.role === "toolResult") {
     return fauxAssistantMessage([
@@ -68,13 +58,11 @@ function script(context: TranscriptContext): AssistantMessage {
   return fauxAssistantMessage([fauxText(`echo: ${prompt}`)]);
 }
 
-/** Real Durable Object fixture: the app's Pi Durable composition with pi-ai's faux provider and a fake Artifacts. */
 export class PiHarnessTestObject extends DurableObject<Env> {
   readonly #faux = fauxProvider({
     tokensPerSecond: 200,
     tokenSize: { min: 2, max: 4 }
   });
-  // The app's workspace, over the object's SQLite.
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
     git: createGitClient(),
@@ -88,9 +76,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     ]
   });
   readonly registry = createRegistry();
-  /** What the fake Artifacts client was asked, in order. Before #extensions, which uses it. */
   readonly #artifactsCalls: string[] = [];
-  // As in production (src/agent.ts), with Artifacts faked; code mode last.
   readonly #extensions: Extension[] = [
     createWorkspaceExtension(this.workspace),
     createGitExtension(this.workspace),
@@ -123,13 +109,11 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     this.#faux.setResponses(Array.from({ length: 200 }, () => script));
   }
 
-  /** Prompt the root session; the result without its transcript. */
   async prompt(text: string): Promise<PiOperationResult> {
     const { messages: _messages, ...result } = await this.harness.prompt(text);
     return result;
   }
 
-  /** Run one of the extensions' tools directly; its text output and error flag. */
   async runTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
     const tool = this.#extensions
       .flatMap((extension) => extension.tools ?? [])
@@ -140,17 +124,14 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     return { text, isError: result.isError === true };
   }
 
-  // ------------------------------------------------------------ Artifacts
   artifactsCalls(): string[] {
     return [...this.#artifactsCalls];
   }
 
-  /** An in-memory Artifacts client. An import stays unreadable for two `get`s, as a real import is for a while. */
   #fakeArtifacts(): ArtifactsClient {
     const repos = new Map<string, { defaultBranch: string; source: string | null; pendingReads: number }>();
     const calls = this.#artifactsCalls;
     let tokens = 0;
-    // Not a valid URL: a clone or push against it fails before any network access.
     const remote = (name: string) => `https://fake artifacts/git/d1agents/${name}.git`;
     const info = (name: string) => {
       const repo = repos.get(name)!;
@@ -209,8 +190,6 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     };
   }
 
-  // ------------------------------------------------------------ Workspace helpers
-  /** A repository at `dir` with one commit on main, as a clone would leave it. */
   async gitRepo(dir: string): Promise<void> {
     const git = this.workspace.git;
     await this.workspace.fs.mkdir(dir, { recursive: true });
@@ -224,7 +203,6 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     return (await this.workspace.git.log({ dir })).map((commit) => commit.message.trim());
   }
 
-  /** Write a file into the workspace, as a test's setup. */
   async writeWorkspaceFile(path: string, text: string): Promise<void> {
     await this.workspace.fs.mkdir("/workspace", { recursive: true });
     await this.workspace.fs.writeFile(path, text);

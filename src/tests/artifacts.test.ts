@@ -31,7 +31,6 @@ describe("the artifacts tools", () => {
     expect((await stub.runTool("git_branch", { dir: "/workspace/hello", name: "agent/start" })).isError).toBe(false);
     const commit = await stub.runTool("git_commit", { dir: "/workspace/hello", message: "Start" });
     expect(commit.text).toMatch(/^Committed 1 file\(s\) on agent\/start as [0-9a-f]{7}\.$/);
-    // The token create() handed back is revoked at once.
     expect(await stub.artifactsCalls()).toEqual(["create hello", "revoke hello initial"]);
   });
 
@@ -57,7 +56,6 @@ describe("the artifacts tools", () => {
   it("import, wait until the import is readable, and revoke every token", async () => {
     const stub = object();
     const result = await stub.runTool("repo_import", { url: "https://github.com/owner/tool.git" });
-    // The fake remote never resolves, so the clone itself fails.
     expect(result.isError).toBe(true);
     expect(result.text).not.toContain(FAKE_ARTIFACTS_TOKEN);
     expect(await stub.artifactsCalls()).toEqual([

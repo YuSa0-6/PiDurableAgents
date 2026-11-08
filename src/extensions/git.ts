@@ -2,25 +2,12 @@ import type { Workspace } from "@cloudflare/computer";
 import { defineTool, type Extension, type ToolExecutionResult } from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
 
-/**
- * pi extension: local git on workspace repositories (branch and commit),
- * and the rules and helpers a remote extension (./artifacts.ts) builds on.
- *
- * Rules a remote extension enforces, whatever the model asks:
- * - push only the current branch, to the branch of the same name, and only
- *   branches under `agent/`; no force push, no delete, no other remote ref;
- * - credentials go only into request headers. They are never written to the
- *   workspace (so `exec` cannot read them) or returned to the model.
- */
-
 export const BRANCH_PREFIX = "agent/";
 const BRANCH_PATTERN = /^agent\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@noreply.d1agents.invalid" };
 
-/** A rule a tool enforces; reported to the model as a tool error, not a crash. */
 export class Refusal extends Error {}
 
-/** An absolute path inside /workspace, normalised; anything else is refused. */
 export function workspacePath(path: string): string {
   if (!path.startsWith("/")) throw new Refusal(`${path} is not an absolute path.`);
   const parts: string[] = [];
@@ -59,7 +46,6 @@ export function fail(text: string): ToolExecutionResult {
   return { output: [{ type: "text", text }], isError: true };
 }
 
-/** Report refusals and errors to the model as tool errors. */
 export async function guarded(run: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult> {
   try {
     return await run();
@@ -68,7 +54,6 @@ export async function guarded(run: () => Promise<ToolExecutionResult>): Promise<
   }
 }
 
-/** Run `work`, removing every secret in `secrets` from its result or error text. */
 export async function redacting(
   secrets: readonly string[],
   work: () => Promise<ToolExecutionResult>
@@ -91,7 +76,6 @@ export async function redacting(
 
 const DirParam = str({ description: "The repository's working tree, an absolute path under /workspace." });
 
-/** `git_branch` and `git_commit`: local, no credentials. */
 export function createGitExtension(workspace: Workspace): Extension {
   const git = workspace.git;
   return {

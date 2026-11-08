@@ -10,33 +10,13 @@ import {
   type ExecutionModelId
 } from "./execution-models";
 
-/**
- * Event Router (Hono): the entry point for every event.
- *
- *   HTTP / webhook ──▶ Event Router ──▶ DecisionModel (d1.1) ──▶ PiAgent (Pi Durable) ──▶ OpenRouter LLM
- *
- * | Method | Path                          | What it does                                  |
- * | ------ | ----------------------------- | --------------------------------------------- |
- * | GET    | /api/health                   | Liveness and the routing policy               |
- * | POST   | /api/decide                   | DecisionModel only (dry run, no answer)       |
- * | POST   | /api/events                   | Router → DecisionModel → Pi agent → LLM       |
- * | GET    | /api/sessions/:id/decisions   | The decisions a session's object has logged   |
- * | GET    | /api/sessions/:id/repos       | The session's Artifacts repos, with read tokens |
- *
- * When the API_TOKEN secret is set, every route but /api/health needs
- * `Authorization: Bearer <API_TOKEN>`.
- */
-
-/** The JSON body `/api/events` and `/api/decide` accept. */
 type EventBody = {
   readonly text?: unknown;
   readonly session?: unknown;
   readonly source?: unknown;
   readonly type?: unknown;
   readonly id?: unknown;
-  /** Default true: wait for the answer. False: return once Pi has the event. */
   readonly wait?: unknown;
-  /** An execution model id to use instead of asking the DecisionModel. */
   readonly model?: unknown;
 };
 
@@ -50,7 +30,6 @@ function badRequest(message: string): HTTPException {
   return new HTTPException(400, { message });
 }
 
-/** Normalise any accepted body into a RouterEvent. */
 function normalise(body: EventBody): RouterEvent {
   const session = str(body.session, "default");
   if (!SESSION_PATTERN.test(session)) {
@@ -89,15 +68,10 @@ async function readJson(request: Request): Promise<EventBody> {
   }
 }
 
-/**
- * The PiAgent object of a session. cf types a Durable Object binding whose
- * Worker is named by string without the class, so add the class here.
- */
 function agentOf(env: Env, session: string): DurableObjectStub<PiAgent> {
   return (env.PiAgent as unknown as DurableObjectNamespace<PiAgent>).getByName(session);
 }
 
-/** The PiAgent object of the session named in the path. */
 function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent> {
   const id = c.req.param("id") ?? "";
   if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
@@ -106,7 +80,6 @@ function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent>
 
 export const app = new Hono<{ Bindings: Env }>();
 
-// Bearer auth for everything but the health check, once API_TOKEN is set.
 app.use("/api/*", async (c, next) => {
   const expected = c.env.API_TOKEN;
   if (!expected || c.req.path === "/api/health") return next();
@@ -117,11 +90,6 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
-/**
- * Compare two secrets without leaking where they differ: compare their
- * SHA-256 digests (same length whatever the input) byte by byte, without
- * stopping early.
- */
 async function sameSecret(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const [x, y] = await Promise.all(
@@ -166,8 +134,6 @@ app.get("/api/sessions/:id/decisions", async (c) =>
   c.json({ decisions: await sessionAgent(c).decisions(50) })
 );
 
-// Read access to the session's Artifacts repositories, so a person can
-// `git fetch` the agent's branches. It hands out tokens, so it needs API auth.
 app.get("/api/sessions/:id/repos", async (c) => {
   if (!c.env.API_TOKEN) {
     return c.json({ error: "Set the API_TOKEN secret first: this route hands out read tokens." }, 403);

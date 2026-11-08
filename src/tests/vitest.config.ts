@@ -11,8 +11,6 @@ export default defineConfig({
     })
   ],
   resolve: {
-    // Resolve every pi package from this project, so the harness and the
-    // tests share one copy of pi's module state.
     dedupe: [
       "@earendil-works/chord",
       "@earendil-works/pi-ai",

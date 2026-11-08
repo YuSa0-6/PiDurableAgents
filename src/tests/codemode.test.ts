@@ -5,11 +5,6 @@ function object() {
   return env.PI_HARNESS_TEST.getByName(crypto.randomUUID());
 }
 
-/**
- * Pi Durable's code mode: the model sends one script, which calls the
- * session's tools as `tools.<name>()` inside QuickJS. (The faux model answers
- * a tool result with `tool said: <result>`.)
- */
 describe("code mode", () => {
   it("runs a script that calls several tools and returns their joined result", async () => {
     const stub = object();
@@ -32,7 +27,6 @@ describe("code mode", () => {
     );
     expect(result.status).toBe("done");
     expect(result.text).toContain("Branch main is not allowed");
-    // Refused before any token was minted.
     expect(await stub.artifactsCalls()).toEqual([]);
   });
 

@@ -20,7 +20,6 @@ function event(text: string): RouterEvent {
 
 type Call = { provider: string; endpoint: string; query: Record<string, unknown> };
 
-/** A fake AI binding whose gateway answers like OpenRouter's decisions API. */
 function fakeEnv(answer: () => Response): { env: DecisionEnv; calls: Call[] } {
   const calls: Call[] = [];
   const ai = {

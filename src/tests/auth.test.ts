@@ -14,7 +14,6 @@ describe("API auth", () => {
   });
 
   it("lets a request with the token through", async () => {
-    // Past auth, the body fails validation: 400, not 401.
     expect((await call("/api/decide", { authorization: "Bearer s3cret" })).status).toBe(400);
   });
 

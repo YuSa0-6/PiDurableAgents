@@ -20,21 +20,12 @@ import { createCodemodeExtension } from "./extensions/codemode";
 import { createGitExtension } from "./extensions/git";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "./extensions/workspace";
 
-/** One Pi Durable session per Durable Object, driven over HTTP. */
 export class PiAgent extends DurableObject<Env> {
-  // Workers AI and AI Gateway over the AI binding. The gateway holds the
-  // OpenRouter key (BYOK), so the Worker has none.
   readonly ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
-  // The execution models (OpenRouter), as pi-ai model objects.
   readonly executionModels = executionModels();
-  // A durable filesystem on the object's SQLite, beside pi's own tables.
-  // `exec` runs JavaScript modules in a fresh Dynamic Worker per call, with
-  // no network of its own. `git` turns on `workspace.git`, which the `codemode:git`
-  // module calls in the host; `allowNetwork` lets it clone, fetch and push.
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
     git: createGitClient(),
-    // This session's git repositories in Cloudflare Artifacts.
     artifacts: {
       binding: this.env.ARTIFACTS,
       sessionId: artifactsSessionId(this.ctx.id.name ?? this.ctx.id.toString())
@@ -52,15 +43,12 @@ export class PiAgent extends DurableObject<Env> {
   readonly registry = createRegistry();
   readonly harness = new PiHarness({
     harness: async ({ storage, context, onWake }) => {
-      // What the model sees: the system prompt and its tools, as pi extensions.
       this.registry.install(createWorkspaceExtension(this.workspace));
       this.registry.install(createGitExtension(this.workspace));
       this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
-      // Code mode last: its prompt section lists the tools installed above.
       this.registry.install(createCodemodeExtension());
       const models = createModels();
       models.setProvider(this.ai.provider);
-      // OpenRouter models, streamed through the gateway.
       models.setProvider(gatewayOpenRouterProvider(this.ai, this.executionModels));
       return Harness.open(
         storage,
@@ -69,8 +57,6 @@ export class PiAgent extends DurableObject<Env> {
           registry: this.registry,
           onWake,
           settings: {
-            // pi doubles the delay before each retry: 1, 2, 4, 8 and 16 seconds,
-            // so a rate-limited model gets about 30 seconds to recover.
             retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 }
           },
           onReport: (report) => console.warn("pi report", report)
@@ -83,11 +69,6 @@ export class PiAgent extends DurableObject<Env> {
 
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
-  /**
-   * Handle one routed event: apply the DecisionModel's choice of model, then
-   * hand the event to Pi. The event id is pi's operation id, so a retried
-   * event is answered once.
-   */
   async handleEvent(
     event: RouterEvent,
     decision: Decision,
@@ -98,7 +79,6 @@ export class PiAgent extends DurableObject<Env> {
     await this.#applyModel(decision);
     const options = {
       operationId: event.id,
-      // Recorded in the transcript as where the input came from.
       entry: {
         kind: "app.event",
         data: {
@@ -120,11 +100,6 @@ export class PiAgent extends DurableObject<Env> {
     return { status, operationId, text, reason };
   }
 
-  /**
-   * This session's Artifacts repositories, each with its Git remote and a
-   * read-only token valid for an hour, so a person can fetch the agent's
-   * branches.
-   */
   async shareRepos(): Promise<SharedRepo[]> {
     const artifacts = this.workspace.artifacts;
     const repos = await artifacts.list();
@@ -144,7 +119,6 @@ export class PiAgent extends DurableObject<Env> {
     );
   }
 
-  /** The newest decisions this object logged, newest first. */
   async decisions(limit = 50): Promise<LoggedDecision[]> {
     this.#ensureLog();
     return this.ctx.storage.sql
@@ -168,10 +142,8 @@ export class PiAgent extends DurableObject<Env> {
       }));
   }
 
-  /** The execution model the session runs on, once set. */
   #appliedModel?: string;
 
-  /** The pi-ai model object for an execution model id. */
   #model(id: string): PiModel {
     const model = this.executionModels.find((candidate) => candidate.id === id);
     if (!model) throw new Error(`Unknown execution model ${id}`);

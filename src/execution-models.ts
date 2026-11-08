@@ -8,14 +8,6 @@ import { createModels, createProvider } from "@earendil-works/pi-ai/models";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { createAI } from "agents/models/pi-ai";
 
-/**
- * The execution models: the LLMs a Pi session can run on. The DecisionModel
- * (Liquid d1.1) picks one per request from this list, reading `criteria`.
- *
- * Every model is an OpenRouter model, called through the AI Gateway
- * (`AI_GATEWAY_ID`), which holds the OpenRouter key (BYOK). Edit this table
- * to change the pool.
- */
 export const EXECUTION_MODELS = [
   {
     id: "deepseek/deepseek-v4.1-flash",
@@ -51,17 +43,12 @@ export const EXECUTION_MODELS = [
 
 export type ExecutionModelId = (typeof EXECUTION_MODELS)[number]["id"];
 
-/** Used when the DecisionModel cannot decide, and for a new session. */
 export const DEFAULT_MODEL: ExecutionModelId = "z-ai/glm-5.3";
 
 export function isExecutionModel(id: string): id is ExecutionModelId {
   return EXECUTION_MODELS.some((model) => model.id === id);
 }
 
-/**
- * Models pi-ai's OpenRouter catalog does not list yet, described from the
- * nearest catalog entry and OpenRouter's model page.
- */
 const NOT_IN_CATALOG: Record<string, { base: string; cost: Model<Api>["cost"] }> = {
   "tencent/hy4": {
     base: "tencent/hy4-preview",
@@ -69,7 +56,6 @@ const NOT_IN_CATALOG: Record<string, { base: string; cost: Model<Api>["cost"] }>
   }
 };
 
-/** pi-ai model objects for the pool, with OpenRouter's metadata. */
 export function executionModels(): Model<Api>[] {
   const catalog = createModels();
   catalog.setProvider(openrouterProvider());
@@ -85,11 +71,6 @@ export function executionModels(): Model<Api>[] {
 
 type AI = ReturnType<typeof createAI>;
 
-/**
- * A pi-ai provider with OpenRouter's id, so a Pi session can store and look
- * up these models, that sends every request through the AI Gateway over the
- * `AI` binding. The Worker holds no OpenRouter key: the gateway adds it.
- */
 export function gatewayOpenRouterProvider(
   ai: AI,
   models: readonly Model<Api>[]
@@ -97,7 +78,6 @@ export function gatewayOpenRouterProvider(
   return createProvider({
     id: "openrouter",
     name: "OpenRouter via AI Gateway",
-    // Keyless: the gateway holds the credential, like the cloudflare provider.
     auth: ai.provider.auth,
     models,
     api: {
