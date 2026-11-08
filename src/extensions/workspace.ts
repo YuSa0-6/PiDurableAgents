@@ -7,7 +7,7 @@ import {
 import type { Extension, ToolRegistration } from "@earendil-works/pi-durable";
 
 const PREAMBLE = [
-  "You are a concise coding assistant. Requests reach you through an event router and a decision model that picked your model for this request; answer in the user's language.",
+  "You are a concise coding assistant. Answer in the user's language.",
   "You have a durable workspace at /workspace: read, write, edit, delete, list (ls), find and grep files there. Paths are absolute.",
   "Two tools run code, for different jobs:",
   "- exec runs a JavaScript module inside the workspace, with node:fs and git. Use it to compute over files.",

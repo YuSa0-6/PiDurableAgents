@@ -17,7 +17,7 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="current-dark.png">
-  <img src="current.png" alt="現状の構成図：開発者が Bearer 認証付きの HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は DecisionModel で入力チェックと d1.1 によるモデル選びをし、RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter のモデルを呼び、pi 拡張 workspace・git・artifacts・codemode を読み込む。workspace は Dynamic Worker で JavaScript を実行し、artifacts はセッションごとの Artifacts リポジトリに clone と push をする。Artifacts は GitHub の公開リポジトリを取り込める。開発者は読み取りトークンで Artifacts から git fetch する" width="100%">
+  <img src="current.png" alt="現状の構成図：開発者が Bearer 認証付きの HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter の GLM 5.3 を呼び、pi 拡張 workspace・git・artifacts・codemode を読み込む。workspace は Dynamic Worker で JavaScript を実行し、artifacts はセッションごとの Artifacts リポジトリに clone と push をする。Artifacts は GitHub の公開リポジトリを取り込める。開発者は読み取りトークンで Artifacts から git fetch する" width="100%">
 </picture>
 
 ## 期待値（案）
@@ -39,11 +39,10 @@ pi の拡張は、ツール（`tools`）、システムプロンプトの段落�
 | サブエージェント | `tools` と `tasks`。止まっても再開できる | pi 拡張 | 案 |
 | Code Mode | スクリプトから自分のツールをまとめて呼ぶ（`createCodemodeExtension`、QuickJS を Durable Object の中で動かす） | pi 拡張 | 済 |
 | Workspace ツール | `workspace` 拡張（システムプロンプトと Workspace ツール）。bash と順番実行を足す | pi 拡張 | 済（bash と順番実行は案） |
-| DecisionModel | 送る前に `session.setModel()` でモデルを切り替える。pi の割り込みには「この依頼だけモデルを変える」場所がないため | アプリ側 | 済 |
 | 認証・API・SSE | Pi は通信の方法を決めない設計 | アプリ側 | 済（SSE は案） |
 | 保存先・起こす仕組み | `PiHarness` が SQLite と alarm を受け持つ | アプリ側 | 済 |
 
-DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確かめるものです。pi 拡張のガードは、Pi の中でツールを実行する直前に止めるものです。
+Event Router は、空の依頼と長すぎる依頼だけを Pi に渡す前に断ります。pi 拡張のガードは、Pi の中でツールを実行する直前に止めるものです。
 
 ## 現状と期待値の比較
 
@@ -60,7 +59,7 @@ DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確
 | 認証 | Bearer トークン（Worker の secret `API_TOKEN` を設定したとき） | 変えない | 済 |
 | API | `/api/events`、`/api/decide`、判定ログ、リポジトリの読み取りトークン | セッション単位の prompt / stream（SSE）/ messages / abort | 案 |
 | API 設計の進め方 | ー | 試作で Pi の実データを見てから、イベントの形を `docs/api.md` に決める | 案 |
-| モデル選択 | DecisionModel（入力チェック + d1.1）→ OpenRouter の 5 モデル | 変えない | 済 |
+| モデル | OpenRouter の GLM 5.3 に固定（`src/model.ts`） | 変えない | 済 |
 | 会話の永続化 | Pi Durable が Durable Object の SQLite に保存 | 変えない | 済 |
 | pi 拡張 | `workspace`・`git`・`artifacts`・`codemode` | ガード・検証・要約・サブエージェントを拡張として足す | 案 |
 | ファイル操作 | read / write / edit / ls / find / grep | 変えない | 済 |

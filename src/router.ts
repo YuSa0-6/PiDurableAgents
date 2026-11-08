@@ -1,14 +1,8 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { PiAgent } from "./agent";
-import { DECISION_MODEL, decide, MIN_CONFIDENCE } from "./decision-model";
 import type { RouterEvent } from "./event";
-import {
-  DEFAULT_MODEL,
-  EXECUTION_MODELS,
-  isExecutionModel,
-  type ExecutionModelId
-} from "./execution-models";
+import { MODEL_ID } from "./model";
 
 type EventBody = {
   readonly text?: unknown;
@@ -17,10 +11,10 @@ type EventBody = {
   readonly type?: unknown;
   readonly id?: unknown;
   readonly wait?: unknown;
-  readonly model?: unknown;
 };
 
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_TEXT = 8000;
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback;
@@ -35,8 +29,11 @@ function normalise(body: EventBody): RouterEvent {
   if (!SESSION_PATTERN.test(session)) {
     throw badRequest("session must match [A-Za-z0-9_-]{1,64}");
   }
-  if (typeof body.text !== "string") {
-    throw badRequest("text (string) is required");
+  if (typeof body.text !== "string" || body.text.trim().length === 0) {
+    throw badRequest("text (non-empty string) is required");
+  }
+  if (body.text.length > MAX_TEXT) {
+    throw badRequest(`text must be at most ${MAX_TEXT} characters`);
   }
   return {
     id: str(body.id, crypto.randomUUID()),
@@ -46,16 +43,6 @@ function normalise(body: EventBody): RouterEvent {
     session,
     receivedAt: new Date().toISOString()
   };
-}
-
-function override(body: EventBody): ExecutionModelId | undefined {
-  if (body.model === undefined) return undefined;
-  if (typeof body.model !== "string" || !isExecutionModel(body.model)) {
-    throw badRequest(
-      `model must be one of: ${EXECUTION_MODELS.map((model) => model.id).join(", ")}`
-    );
-  }
-  return body.model;
 }
 
 async function readJson(request: Request): Promise<EventBody> {
@@ -104,35 +91,16 @@ app.get("/api/health", (c) =>
   c.json({
     ok: true,
     auth: c.env.API_TOKEN ? "bearer" : "none",
-    flow: "Event Router (Hono) → DecisionModel (Liquid d1.1) → PiAgent (Pi Durable) → OpenRouter LLM",
-    decisionModel: DECISION_MODEL,
-    minConfidence: MIN_CONFIDENCE,
-    defaultModel: DEFAULT_MODEL,
-    executionModels: EXECUTION_MODELS
+    model: MODEL_ID
   })
 );
-
-app.post("/api/decide", async (c) => {
-  const body = await readJson(c.req.raw);
-  const event = normalise(body);
-  return c.json({ event, decision: await decide(c.env, event, override(body)) });
-});
 
 app.post("/api/events", async (c) => {
   const body = await readJson(c.req.raw);
   const event = normalise(body);
-  const decision = await decide(c.env, event, override(body));
-  if (decision.action === "reject") {
-    return c.json({ event, decision }, 422);
-  }
-  const agent = agentOf(c.env, event.session);
-  const result = await agent.handleEvent(event, decision, body.wait !== false);
-  return c.json({ event, decision, result });
+  const result = await agentOf(c.env, event.session).handleEvent(event, body.wait !== false);
+  return c.json({ event, result });
 });
-
-app.get("/api/sessions/:id/decisions", async (c) =>
-  c.json({ decisions: await sessionAgent(c).decisions(50) })
-);
 
 app.get("/api/sessions/:id/repos", async (c) => {
   if (!c.env.API_TOKEN) {

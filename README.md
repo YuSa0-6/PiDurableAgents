@@ -1,7 +1,7 @@
 # D1Agents: Pi Durable Agent on Cloudflare
 
 Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objects で動かすエージェントです。ブラウザ UI はなく、HTTP API だけで使います。
-すべてのリクエストは **Event Router（Hono）** から入ります。**DecisionModel（Liquid d1.1）** が依頼の内容に合う実行モデルを選び、**Pi Durable Agent** がそのモデルで答えます。モデルはすべて OpenRouter のものを Cloudflare AI Gateway 経由で呼びます。
+すべてのリクエストは **Event Router（Hono）** から入り、**Pi Durable Agent** が答えます。モデルは OpenRouter の GLM 5.3 に固定し、Cloudflare AI Gateway 経由で呼びます。
 
 - デプロイ先: https://d1agents-pi-durable.itumens.workers.dev
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
@@ -18,24 +18,21 @@ Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objec
 
 ```mermaid
 flowchart LR
-  A[HTTP / Webhook<br>POST /api/events] --> R[Event Router<br>Hono]
-  R --> G{ガードレール}
-  G -- reject --> X[422 を返す]
-  G --> D[DecisionModel<br>liquid/d1.1]
-  D -- 選んだモデル --> P[PiAgent<br>Durable Object + Pi Durable]
+  A[HTTP / Webhook<br>POST /api/events] --> R[Event Router<br>Hono・認証]
+  R --> P[PiAgent<br>Durable Object + Pi Durable]
   P --> GW[Cloudflare AI Gateway<br>d1agents]
-  GW --> OR[OpenRouter]
-  P --> T[Workspace ツール<br>read / write / exec / git]
+  GW --> OR[OpenRouter<br>GLM 5.3]
+  P --> T[pi 拡張<br>workspace / git / artifacts / codemode]
+  T --> AR[(Artifacts)]
 ```
 
 | 層 | ファイル | 役割 |
 | --- | --- | --- |
 | Worker の入口 | `src/index.ts` | すべてのリクエストを Event Router に渡し、PiAgent を公開する |
-| Event Router | `src/router.ts` | Hono で HTTP を受け、認証し、イベントの形にそろえる |
+| Event Router | `src/router.ts` | Hono で HTTP を受け、認証し、イベントの形にそろえる（空の依頼と 8,000 文字を超える依頼は断る） |
 | イベント | `src/event.ts` | Router がそろえたイベントの型 |
-| DecisionModel | `src/decision-model.ts` | ガードレールのあと、d1.1 に実行モデルを選ばせる |
-| 実行モデル一覧 | `src/execution-models.ts` | 候補モデルと、d1.1 に渡す判断基準（`criteria`） |
-| PiAgent | `src/agent.ts` | Pi Durable を動かす Durable Object。選ばれたモデルに切り替えて回答する |
+| モデル | `src/model.ts` | GLM 5.3 の情報と、AI Gateway 経由で OpenRouter を呼ぶプロバイダー |
+| PiAgent | `src/agent.ts` | Pi Durable を動かす Durable Object |
 | pi 拡張 | `src/extensions/` | モデルに見えるもの（システムプロンプトとツール）。下の表 |
 
 | pi 拡張 | ファイル | 中身 |
@@ -47,43 +44,9 @@ flowchart LR
 
 1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 
-## DecisionModel の判定手順
+## モデル
 
-| 順番 | 段階 | 内容 | `decidedBy` |
-| --- | --- | --- | --- |
-| 1 | ガードレール（入力チェック） | 空文字、8000 文字超、禁止パターンは `reject`（d1.1 は呼ばない） | `guardrail` |
-| 2 | Liquid d1.1 | 依頼文を `state` として渡し、`choice` 型の質問で実行モデルを 1 つ選ばせる | `d1.1` |
-| 3 | フォールバック | d1.1 の失敗、確信度 0.4 未満、候補外の答えのときは既定モデル（`z-ai/glm-5.3`） | `fallback` |
-| ー | 手動指定 | `/api/events` に `model` を付けると d1.1 を飛ばしてそのモデルを使う | `override` |
-
-d1.1 は会話をしない「判定専用」のモデルです。1 回あたり約 0.0000018〜0.0000038 ドル、0.3〜1 秒で答え、候補ごとの確率も返します。
-
-| 項目 | 内容 |
-| --- | --- |
-| 呼び先 | OpenRouter の `/api/alpha/decisions`（alpha 版） |
-| AI Gateway での指定 | provider `openrouter`、endpoint `../alpha/decisions`（Gateway の OpenRouter は `/api/v1` が起点のため） |
-| 入力 | `state`（依頼文など）と `questions`（質問の型は `choice` / `score` / `noul`） |
-| 出力 | `choice`（選ばれたモデル）、`probabilities`、`confidence` |
-
-## 実行モデル
-
-d1.1 は下の「判断基準」を読んで選びます。`src/execution-models.ts` の `EXECUTION_MODELS` を書き換えると候補を変えられます。料金は OpenRouter の 100 万トークンあたり（入力 / 出力）です。
-
-| モデル | 判断基準（要約） | 料金 |
-| --- | --- | --- |
-| `deepseek/deepseek-v4.1-flash` | あいさつ、短い質問、簡単な計算 | $0.04 / $0.50 |
-| `z-ai/glm-5.3`（既定） | ファイル操作、コード実行、git、複数手順のツール作業 | $0.07 / $1.40 |
-| `google/gemini-3.8-flash` | 要約、説明、中くらいの難しさの混合タスク | $0.83 / $4.12 |
-| `qwen/qwen3.8-max-0902` | 設計判断、比較、トレードオフ分析 | $2.00 / $6.00 |
-| `tencent/hy4` | 文書作成、情報整理、ビジネス文書 | $0.42 / $1.25 |
-
-実際に試したときの振り分け:
-
-| 依頼 | 選ばれたモデル | 確信度 |
-| --- | --- | --- |
-| おはよう！ | DeepSeek V4.1 Flash | 0.99 |
-| exec でファイルを書いて読み返す | GLM 5.3 | 0.46 |
-| RDB とドキュメント DB の設計判断 | Qwen3.8 Max | 0.85 |
+GLM 5.3（`z-ai/glm-5.3`、OpenRouter の 100 万トークンあたり入力 $0.07 / 出力 $1.40）に固定しています。変えるときは `src/model.ts` の `MODEL_ID` を書き換えます。
 
 ### OpenRouter の呼び方
 
@@ -92,7 +55,7 @@ d1.1 は下の「判断基準」を読んで選びます。`src/execution-models
 | API キー | AI Gateway `d1agents` の Provider Keys に登録（BYOK）。Worker はキーを持たない |
 | Gateway の指定 | `cloudflare.config.ts` の `AI_GATEWAY_ID` |
 | Pi への登録 | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
-| モデル情報 | pi-ai の OpenRouter カタログから取得。カタログにない `tencent/hy4` は `hy4-preview` を元に料金だけ差し替え |
+| モデル情報 | pi-ai の OpenRouter カタログから取得 |
 
 Gemini は再帰する JSON スキーマを受け付けません。そのため `exec` ツールの `input` は「任意のオブジェクト」として渡しています（`src/extensions/workspace.ts`）。
 
@@ -100,10 +63,8 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 
 | メソッド | パス | 内容 |
 | --- | --- | --- |
-| GET | `/api/health` | 動作確認と、実行モデル一覧 |
-| POST | `/api/decide` | DecisionModel だけを実行（実行モデルは呼ばない） |
-| POST | `/api/events` | Router → DecisionModel → Pi → LLM の全体を実行 |
-| GET | `/api/sessions/:id/decisions` | そのセッションの判定ログ（新しい順） |
+| GET | `/api/health` | 動作確認と、使っているモデル |
+| POST | `/api/events` | エージェントに依頼する |
 | GET | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン（`API_TOKEN` の設定が必要） |
 
 ### 認証
@@ -127,7 +88,6 @@ pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
 | `id` | いいえ | ランダム | 冪等キー。同じ id は 1 回だけ処理される |
 | `source` / `type` | いいえ | `http` / `message` | イベントの出どころ。会話ログに残る |
 | `wait` | いいえ | `true` | `false` で受け付けだけ返し、回答はバックグラウンドで進む |
-| `model` | いいえ | なし | 実行モデルの ID。指定すると d1.1 を飛ばしてそのモデルで答える |
 
 ### 試す
 
@@ -137,31 +97,19 @@ pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
 export D1AGENTS_TOKEN='<API_TOKEN と同じ値>'
 ```
 
-判定だけを見る:
-
-```bash
-curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/decide -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"text":"マイクロサービスとモノリスを比較して"}'
-```
-
-LLM まで通す:
+依頼する:
 
 ```bash
 curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
 ```
 
-モデルを指定して試す（d1.1 を飛ばす）:
+エージェントの成果（Artifacts のリポジトリ）を受け取る:
 
 ```bash
-curl -s -X POST https://d1agents-pi-durable.itumens.workers.dev/api/events -H "authorization: Bearer $D1AGENTS_TOKEN" -H 'content-type: application/json' -d '{"session":"demo","model":"tencent/hy4","text":"勉強会の案内文を書いて"}'
+curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos -H "authorization: Bearer $D1AGENTS_TOKEN"
 ```
 
-判定ログを見る:
-
-```bash
-curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/decisions -H "authorization: Bearer $D1AGENTS_TOKEN"
-```
-
-どのモデルが実際に答えたかは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログでも確認できます。
+モデルへのリクエストは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログで確認できます。
 
 ## Code Mode
 
@@ -173,7 +121,7 @@ Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています�
 | 実行場所 | QuickJS（WebAssembly）を、PiAgent の Durable Object の中で動かす |
 | 止まっても続く | ツールの結果を 1 つずつ記録しておき、Durable Object が再起動したら、スクリプトを最初から同じ結果で再生して続きから動かす |
 | 制限 | 計算だけで進められるのは約 3 秒（割り込み 30,000 回）、メモリ 32 MB、全体で 5 分 |
-| `models.*` | 使わない（`models: false`）。スクリプトからモデルを何度も呼ぶと、DecisionModel を通らずに費用がかかるため |
+| `models.*` | 使わない（`models: false`）。スクリプトからモデルを何度も呼ぶと、費用が見えにくくなるため |
 | ツールの決まり | スクリプトから呼んでも同じ。たとえば `tools.repo_push` で `main` を push しようとしても断られる |
 
 コードを動かすツールは 2 つあり、役割が違います。
@@ -243,7 +191,6 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 
 | テスト | 確かめること |
 | --- | --- |
-| `decision-model.test.ts` | ガードレールとフォールバックの判定 |
 | `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること |
 | `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
 | `git.test.ts` | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること |
@@ -282,9 +229,8 @@ pnpm exec cf deploy --dry-run
 | --- | --- | --- |
 | 入口 | `fetch` 関数で直接振り分け | Hono の Event Router |
 | 画面 | React のチャット UI（WebSocket） | なし。HTTP API のみ |
-| モデル選択 | 固定（Workers AI `glm-5.3-flash`） | d1.1 が毎回 OpenRouter の 5 モデルから選ぶ |
+| モデル | 固定（Workers AI `glm-5.3-flash`） | 固定（OpenRouter の GLM 5.3、AI Gateway 経由） |
 | HTTP からの利用 | なし | `POST /api/events` |
-| 判定ログ | なし | Durable Object の SQLite に `router_decisions` テーブル |
 | ビルドとデプロイ | Vite と Wrangler | `cf` CLI（`cloudflare.config.ts`、中は Vite+） |
 | `agents` バージョン | `*`（monorepo 内） | `^0.33.0`（Pi 1.5 対応） |
 | `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`） |

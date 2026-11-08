@@ -9,12 +9,12 @@ function call(path: string, headers: Record<string, string> = {}) {
 
 describe("API auth", () => {
   it("rejects a request without the token", async () => {
-    expect((await call("/api/decide")).status).toBe(401);
+    expect((await call("/api/events")).status).toBe(401);
     expect((await call("/api/events", { authorization: "Bearer wrong" })).status).toBe(401);
   });
 
   it("lets a request with the token through", async () => {
-    expect((await call("/api/decide", { authorization: "Bearer s3cret" })).status).toBe(400);
+    expect((await call("/api/events", { authorization: "Bearer s3cret" })).status).toBe(400);
   });
 
   it("hands out repository read tokens only once API_TOKEN is set", async () => {
