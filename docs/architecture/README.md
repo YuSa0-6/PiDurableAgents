@@ -11,7 +11,7 @@ D1Agents の「いまの構成」と「目指す構成（案）」を並べた�
 
 HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネットワークなしでブラウザで開けます。PNG は HTML をそのまま撮ったものです。
 
-現状の図は Cloudflare Artifacts に切り替えたあとの構成です。期待値の図は切り替え前に描いたもので、git の相手が GitHub のままです（期待値の中身は下の表のほうが正確です）。
+2 枚とも Cloudflare Artifacts に切り替えたあとの構成です。期待値の図では、提案中の拡張（guard・verify・compact・subagents）を pi 拡張の 2 段目に並べています。
 
 ## 現状
 
@@ -24,7 +24,7 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="target-dark.png">
-  <img src="target.png" alt="期待値の構成図：CLI と評価ランナーが同じ API を認証付きの HTTP と SSE で使う。pi 拡張に Workspace（bash・順番実行）、ガード、検証、要約、サブエージェントを並べる。Workspace から Dynamic Worker で exec と bash、任意で Container で npm test、GitHub に push する" width="100%">
+  <img src="target.png" alt="期待値の構成図：現状の構成に加えて、CLI と評価ランナーが同じ API を Bearer 認証付きの HTTP と SSE で使う。pi 拡張に guard（危険な操作を止める）、verify（テストまで続ける）、compact（要約の調整）、subagents（調査役への分担）を足す。workspace から Dynamic Worker で exec と bash、任意で Container で npm test を動かす。git はセッションごとの Artifacts リポジトリで、GitHub の公開リポジトリを取り込める" width="100%">
 </picture>
 
 ## pi 拡張とアプリ側の分担
@@ -67,7 +67,7 @@ DecisionModel の「入力チェック」は、Pi に渡す前に依頼文を確
 | コード実行 | `exec`（JavaScript のみ、通信なし） | `exec` を順番に実行し、bash（`WorkerShellBackend`、just-bash）を足す。bash も Dynamic Worker で動く。ライブラリ側ではまだ実験的な機能 | 案 |
 | 本物の Linux | なし | Container で `npm install` / `npm test`（任意・費用あり） | 案 |
 | git | Artifacts（名前空間 `d1agents`）にセッションごとのリポジトリ。import・作成・branch・commit・`agent/` ブランチへの push | GitHub への反映（GitHub App のコードは削除。必要ならコミット `2fce24f` から戻す） | 済（GitHub は案） |
-| 品質の測定 | 単体テスト 8 件 | 評価ランナーで成功率・コスト・時間を記録。拡張のあり・なしも比べる | 案 |
+| 品質の測定 | 単体テスト 25 件 | 評価ランナーで成功率・コスト・時間を記録。拡張のあり・なしも比べる | 案 |
 | デプロイ | 手元から `cf deploy`（`cloudflare.config.ts`） | 変えない | 済 |
 
 ## 図を作り直すとき
