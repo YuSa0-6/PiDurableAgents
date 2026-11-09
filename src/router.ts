@@ -68,16 +68,20 @@ function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent>
 export const app = new Hono<{ Bindings: Env }>();
 
 app.use("/api/*", async (c, next) => {
-  if (!accessOf(c)) return c.json({ error: "Sign in with Cloudflare Access" }, 403);
+  const token = /^Bearer (\S+)$/.exec(c.req.header("authorization") ?? "")?.[1];
+  if (!token || !(await isAccountToken(c.env.ACCOUNT_ID, token))) {
+    return c.json({ error: "Send an active Account API token as Authorization: Bearer <token>" }, 401);
+  }
   return next();
 });
 
-function accessOf(c: Context<{ Bindings: Env }>): CloudflareAccessContext | undefined {
-  try {
-    return (c.executionCtx as ExecutionContext).access;
-  } catch {
-    return undefined;
-  }
+async function isAccountToken(accountId: string, token: string): Promise<boolean> {
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/tokens/verify`, {
+    headers: { authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) return false;
+  const body: { result?: { status?: string } } = await response.json();
+  return body.result?.status === "active";
 }
 
 app.get("/api/health", (c) =>

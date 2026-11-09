@@ -17,14 +17,14 @@ HTML はフォントとロゴを埋め込んだ 1 ファイルなので、ネッ
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="current-dark.png">
-  <img src="current.png" alt="現状の構成図：開発者が Cloudflare Access でログインして HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter の GLM 5.3 を呼び、pi 拡張 workspace・git・artifacts・codemode を読み込む。workspace は Dynamic Worker で JavaScript を実行し、artifacts はセッションごとの Artifacts リポジトリに clone と push をする。Artifacts は GitHub の公開リポジトリを取り込める。開発者は読み取りトークンで Artifacts から git fetch する" width="100%">
+  <img src="current.png" alt="現状の構成図：開発者がアカウント API トークンを付けて HTTP で Cloudflare の Worker（Hono の Event Router）に送る。Router は RPC で Durable Object の Pi Durable に渡す。Pi Durable は AI Gateway 経由で OpenRouter の GLM 5.3 を呼び、pi 拡張 workspace・git・artifacts・codemode を読み込む。workspace は Dynamic Worker で JavaScript を実行し、artifacts はセッションごとの Artifacts リポジトリに clone と push をする。Artifacts は GitHub の公開リポジトリを取り込める。開発者は読み取りトークンで Artifacts から git fetch する" width="100%">
 </picture>
 
 ## 期待値（案）
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="target-dark.png">
-  <img src="target.png" alt="期待値の構成図：現状の構成に加えて、CLI と評価ランナーが同じ API を Cloudflare Access 越しの HTTP と SSE で使う。pi 拡張に guard（危険な操作を止める）、verify（テストまで続ける）、compact（要約の調整）、subagents（調査役への分担）を足す。workspace から Dynamic Worker で exec と bash、任意で Container で npm test を動かす。git はセッションごとの Artifacts リポジトリで、GitHub の公開リポジトリを取り込める" width="100%">
+  <img src="target.png" alt="期待値の構成図：現状の構成に加えて、CLI と評価ランナーが同じ API を アカウント API トークン付きの HTTP と SSE で使う。pi 拡張に guard（危険な操作を止める）、verify（テストまで続ける）、compact（要約の調整）、subagents（調査役への分担）を足す。workspace から Dynamic Worker で exec と bash、任意で Container で npm test を動かす。git はセッションごとの Artifacts リポジトリで、GitHub の公開リポジトリを取り込める" width="100%">
 </picture>
 
 ## pi 拡張とアプリ側の分担
@@ -56,7 +56,7 @@ Event Router は、空の依頼と長すぎる依頼だけを Pi に渡す前に
 | 分野 | 現状 | 期待値 | 状態 |
 | --- | --- | --- | --- |
 | 入口 | `curl` と Webhook（`POST /api/events`） | CLI（chat / send / log）と評価ランナーが同じ API を使う | 案 |
-| 認証 | Cloudflare Access（この Cloudflare アカウントのメンバーだけ） | 変えない | 済 |
+| 認証 | アカウント API トークン（Worker が Cloudflare API で確かめる） | 変えない | 済 |
 | API | `/api/events`、`/api/decide`、判定ログ、リポジトリの読み取りトークン | セッション単位の prompt / stream（SSE）/ messages / abort | 案 |
 | API 設計の進め方 | ー | 試作で Pi の実データを見てから、イベントの形を `docs/api.md` に決める | 案 |
 | モデル | OpenRouter の GLM 5.3 に固定（`src/model.ts`） | 変えない | 済 |

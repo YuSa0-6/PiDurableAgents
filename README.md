@@ -69,15 +69,15 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 
 ### 認証
 
-Worker 全体を Cloudflare Access で守っています。ログインできるのは、この Cloudflare アカウントのメンバーだけです（Access のアプリ名は `d1agents-pi-durable - Cloudflare Workers`、ポリシーは「Cloudflare account members」）。
+`/api/*` は、この Cloudflare アカウントの **アカウント API トークン**（Account API Token）を持つ人とエージェントだけが使えます。
 
-| 使う場面 | 方法 |
+| 項目 | 内容 |
 | --- | --- |
-| ブラウザ | URL を開くと Cloudflare のログイン画面が出る |
-| 手元の `curl` | `cloudflared access curl <URL>` を使う（初回だけブラウザでログイン） |
-| Webhook や自動化 | Access のサービストークンを作り、`CF-Access-Client-Id` と `CF-Access-Client-Secret` のヘッダーを付ける（ポリシーにサービストークンの許可を足す） |
-
-Worker は、Access を通った依頼（`ctx.access` があるもの）だけを受け付けます。Access を通っていない依頼は 403 を返します。秘密情報の設定はありません。
+| 送り方 | `Authorization: Bearer <トークン>` ヘッダー |
+| 確かめ方 | Worker が Cloudflare API の `/accounts/<アカウント ID>/tokens/verify` に問い合わせ、`active` なら通す |
+| 通らないとき | 401 を返す |
+| トークンの作り方 | ダッシュボードの **Manage Account → Account API Tokens** で作る。権限は最小のもので足りる |
+| 止め方 | そのトークンを削除するか無効にする |
 
 `/api/events` の入力:
 
@@ -91,18 +91,22 @@ Worker は、Access を通った依頼（`ctx.access` があるもの）だけ�
 
 ### 試す
 
-`cloudflared`（Cloudflare のコマンド）をインストールしておきます。初回はブラウザで Access にログインします。
+アカウント API トークンを `CLOUDFLARE_ACCOUNT_TOKEN` に入れておきます。
+
+```bash
+export CLOUDFLARE_ACCOUNT_TOKEN=<アカウント API トークン>
+```
 
 依頼する:
 
 ```bash
-cloudflared access curl https://d1agents-pi-durable.itumens.workers.dev/api/events -X POST -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
+curl https://d1agents-pi-durable.itumens.workers.dev/api/events -X POST -H "authorization: Bearer $CLOUDFLARE_ACCOUNT_TOKEN" -H 'content-type: application/json' -d '{"session":"demo","text":"/workspace/haiku.txt に俳句を書いて保存し、読み返して"}'
 ```
 
 エージェントの成果（Artifacts のリポジトリ）を受け取る:
 
 ```bash
-cloudflared access curl https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos
+curl https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos -H "authorization: Bearer $CLOUDFLARE_ACCOUNT_TOKEN"
 ```
 
 モデルへのリクエストは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログで確認できます。
@@ -204,7 +208,7 @@ pnpm start
 
 起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` と `ARTIFACTS` はリモートで動かすため、`cf auth login` でログインしておく必要があります（`cf` は Wrangler のログインを使いません）。
 
-Access はプレビューも守るので、`pnpm start` は起動時に Access のログインを求めます。対話できない環境（CI やクラウドのエージェント）では、Access のサービストークンを `CLOUDFLARE_ACCESS_CLIENT_ID` と `CLOUDFLARE_ACCESS_CLIENT_SECRET` に入れておきます。ローカルの Worker の中では、`cloudflare.config.ts` の `access.dev` がログイン済みの状態を模擬します。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
+ローカルでも `/api/*` にはアカウント API トークンが要ります。OpenRouter のキーは AI Gateway が持つので、手元に置く必要はありません。
 
 ## デプロイ
 

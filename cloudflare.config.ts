@@ -10,15 +10,11 @@ export default defineConfig({
 		observability: {
 			enabled: true,
 		},
-		access: {
-			dev: {
-				aud: "193793b85848c2ae4b5d060d5c6f106678a05695bb7d133432fc82da7cc997d6",
-			},
-		},
 		exports: {
 			PiAgent: exports.durableObject({ storage: "sqlite" }),
 		},
 		env: {
+			ACCOUNT_ID: bindings.text("7beca1669580a2216d1e5b0bc3c346f8"),
 			AI_GATEWAY_ID: bindings.text("d1agents"),
 			PiAgent: bindings.durableObject({
 				worker: "d1agents-pi-durable",
