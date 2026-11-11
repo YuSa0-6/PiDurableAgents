@@ -15,6 +15,7 @@ export default defineConfig({
 		},
 		env: {
 			AI_GATEWAY_ID: bindings.text("d1agents"),
+			API_TOKEN: bindings.secret(),
 			PiAgent: bindings.durableObject({
 				worker: "d1agents-pi-durable",
 				exportName: "PiAgent",

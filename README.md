@@ -1,7 +1,7 @@
 # D1Agents: Pi Durable Agent on Cloudflare
 
-Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objects で動かすエージェントです。ブラウザ UI はなく、HTTP API だけで使います。
-すべてのリクエストは **Event Router（Hono）** から入り、**Pi Durable Agent** が答えます。モデルは OpenRouter の GLM 5.3 に固定し、Cloudflare AI Gateway 経由で呼びます。
+Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objects で動かすエージェントです。ブラウザ UI はなく、HTTP API とリモート MCP（Streamable HTTP の `/mcp`）で使います。
+HTTP は **Event Router（Hono）** から入り、MCP のツールは同じ受付（`AgentApi`）を通ります。どちらも **Pi Durable Agent** が答えます。モデルは OpenRouter の GLM 5.3 に固定し、Cloudflare AI Gateway 経由で呼びます。
 
 - デプロイ先: https://d1agents-pi-durable.itumens.workers.dev
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
@@ -18,8 +18,10 @@ Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objec
 
 ```mermaid
 flowchart LR
-  A[HTTP / Webhook<br>POST /api/events] --> R[Event Router<br>Hono・認証]
-  R --> P[PiAgent<br>Durable Object + Pi Durable]
+  A[HTTP API<br>POST /api/events] --> R[Event Router<br>Hono・認証]
+  M[MCP<br>POST /mcp] --> S[AgentApi<br>同じ検証と配送]
+  R --> S
+  S --> P[PiAgent<br>Durable Object + Pi Durable]
   P --> GW[Cloudflare AI Gateway<br>d1agents]
   GW --> OR[OpenRouter<br>GLM 5.3]
   P --> T[pi 拡張<br>workspace / git / artifacts / codemode]
@@ -28,9 +30,12 @@ flowchart LR
 
 | 層 | ファイル | 役割 |
 | --- | --- | --- |
-| Worker の入口 | `src/index.ts` | すべてのリクエストを Event Router に渡し、PiAgent を公開する |
-| Event Router | `src/router.ts` | Hono で HTTP を受け、認証し、イベントの形にそろえる（空の依頼と 8,000 文字を超える依頼は断る） |
-| イベント | `src/event.ts` | Router がそろえたイベントの型 |
+| Worker の入口 | `src/index.ts` | `/mcp` を MCP に、それ以外を Event Router に渡し、PiAgent を公開する |
+| Event Router | `src/router.ts` | Hono で HTTP を受け、認証し、`AgentApi` に渡す |
+| 受付 | `src/agent-api.ts` | 認証、依頼の検証（空の依頼と 8,000 文字を超える依頼は断る）、PiAgent への配送。HTTP と MCP が共用する |
+| MCP | `src/mcp.ts` | Streamable HTTP の `/mcp`。ツールは `AgentApi` を呼ぶ |
+| イベント | `src/event.ts` | そろえたイベントの型 |
+| 会話への記録 | `src/event-session.ts` | 依頼を Pi の会話ログに載せる（`source` は出どころ） |
 | モデル | `src/model.ts` | GLM 5.3 の情報と、AI Gateway 経由で OpenRouter を呼ぶプロバイダー |
 | PiAgent | `src/agent.ts` | Pi Durable を動かす Durable Object |
 | pi 拡張 | `src/extensions/` | モデルに見えるもの（システムプロンプトとツール）。下の表 |
@@ -69,13 +74,13 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 
 ### 認証
 
-Worker の secret `API_TOKEN` を設定すると、`/api/health` 以外のすべての API に `Authorization: Bearer <API_TOKEN>` が必要になります。設定していないあいだは、誰でも呼べます（`/api/health` の `auth` が `none` になります）。
+Worker の secret `API_TOKEN` を設定すると、`/api/health` 以外のすべての API と、MCP の `/mcp` に `Authorization: Bearer <API_TOKEN>` が必要になります。設定していないあいだは、誰でも呼べます（`/api/health` の `auth` が `none` になります）。`/api/health` はトークンを設定したあとも開いたままです。MCP はエンドポイント全体がトークンを要求します。ブラウザの事前リクエスト（OPTIONS）だけは、Authorization を付けられないので通ります。
 
 ```bash
 pnpm exec wrangler secret put API_TOKEN --name d1agents-pi-durable
 ```
 
-`cf` は beta のため、secret を 1 つだけ登録するコマンドがまだありません。secret の登録だけは Wrangler を使います（設定ファイルを読まないので、`--name` で Worker 名を渡します）。
+`cf` は beta のため、secret を 1 つだけ登録するコマンドがまだありません。secret の登録だけは Wrangler を使います（設定ファイルを読まないので、`--name` で Worker 名を渡します）。名前は `cloudflare.config.ts` の `API_TOKEN`（`bindings.secret()`）です。手元では `.dev.vars` に `API_TOKEN=<値>` と書くと、`pnpm start` が同じトークンを要求します。
 
 `/api/sessions/:id/repos`（読み取りトークンを渡す入口）は、`API_TOKEN` が設定されているときだけ使えます。
 
@@ -110,6 +115,36 @@ curl -s https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos 
 ```
 
 モデルへのリクエストは、Cloudflare ダッシュボードの AI Gateway `d1agents` のログで確認できます。
+
+## MCP
+
+Grok Bots などのリモート MCP コネクタから、同じ Worker を呼べます。エンドポイントは Streamable HTTP の `/mcp` です（`agents/mcp/server` の `createMcpHandler`）。OAuth はまだありません。クライアントが静的な `Authorization` ヘッダーを付けます。
+
+| ツール | 対応する API | 内容 |
+| --- | --- | --- |
+| `send_event` | `POST /api/events` | エージェントに依頼する。`text`、`session`（既定 `default`）、冪等キー `id`、`wait`（既定 `true`）。空の依頼と 8,000 文字を超える依頼は HTTP と同じ文言で断る。会話ログの `source` は `mcp`、`type` は `message` |
+| `session_repos` | `GET /api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン。`API_TOKEN` が未設定のときは断る |
+| `health` | `GET /api/health` | 動作確認、認証の有無、使っているモデル |
+
+ツールの戻り値は、対応する HTTP API と同じ JSON です。検証で断ったときは `{ "error": "..." }` をツールエラーとして返します。
+
+コネクタには次を登録します。
+
+| 項目 | 値 |
+| --- | --- |
+| URL | `https://d1agents-pi-durable.itumens.workers.dev/mcp` |
+| トランスポート | Streamable HTTP |
+| ヘッダー | `Authorization: Bearer <API_TOKEN>` |
+
+手元では `pnpm start` のあと、`http://localhost:5173/mcp` に同じヘッダーでつなぎます。
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://localhost:5173/mcp --method tools/list --header "Authorization: Bearer $D1AGENTS_TOKEN"
+```
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://localhost:5173/mcp --method tools/call --tool-name send_event --tool-arg session=demo --tool-arg text="一言で挨拶して" --header "Authorization: Bearer $D1AGENTS_TOKEN"
+```
 
 ## Code Mode
 
@@ -193,6 +228,7 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | --- | --- |
 | `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること |
 | `auth.test.ts` | `API_TOKEN` を設定すると、トークンのない呼び出しを 401 で断ること |
+| `mcp.test.ts` | MCP の initialize と tools/list、ツール呼び出しがエージェントまで届くこと（会話ログの `source` は `mcp`）、`API_TOKEN` があるときの 401 |
 | `git.test.ts` | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること |
 | `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
 | `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
@@ -230,7 +266,7 @@ pnpm exec cf deploy --dry-run
 | 入口 | `fetch` 関数で直接振り分け | Hono の Event Router |
 | 画面 | React のチャット UI（WebSocket） | なし。HTTP API のみ |
 | モデル | 固定（Workers AI `glm-5.3-flash`） | 固定（OpenRouter の GLM 5.3、AI Gateway 経由） |
-| HTTP からの利用 | なし | `POST /api/events` |
+| HTTP からの利用 | なし | `POST /api/events` と、Streamable HTTP の MCP `/mcp` |
 | ビルドとデプロイ | Vite と Wrangler | `cf` CLI（`cloudflare.config.ts`、中は Vite+） |
 | `agents` バージョン | `*`（monorepo 内） | `^0.33.0`（Pi 1.5 対応） |
 | `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`） |
