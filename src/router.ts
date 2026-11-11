@@ -1,118 +1,31 @@
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import type { PiAgent } from "./agent";
-import type { RouterEvent } from "./event";
-import { MODEL_ID } from "./model";
-
-type EventBody = {
-  readonly text?: unknown;
-  readonly session?: unknown;
-  readonly source?: unknown;
-  readonly type?: unknown;
-  readonly id?: unknown;
-  readonly wait?: unknown;
-};
-
-const SESSION_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
-const MAX_TEXT = 8000;
-
-function str(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
-}
-
-function badRequest(message: string): HTTPException {
-  return new HTTPException(400, { message });
-}
-
-function normalise(body: EventBody): RouterEvent {
-  const session = str(body.session, "default");
-  if (!SESSION_PATTERN.test(session)) {
-    throw badRequest("session must match [A-Za-z0-9_-]{1,64}");
-  }
-  if (typeof body.text !== "string" || body.text.trim().length === 0) {
-    throw badRequest("text (non-empty string) is required");
-  }
-  if (body.text.length > MAX_TEXT) {
-    throw badRequest(`text must be at most ${MAX_TEXT} characters`);
-  }
-  return {
-    id: str(body.id, crypto.randomUUID()),
-    source: str(body.source, "http"),
-    type: str(body.type, "message"),
-    text: body.text,
-    session,
-    receivedAt: new Date().toISOString()
-  };
-}
-
-async function readJson(request: Request): Promise<EventBody> {
-  try {
-    const body: unknown = await request.json();
-    if (typeof body !== "object" || body === null) throw new Error();
-    return body as EventBody;
-  } catch {
-    throw badRequest("body must be a JSON object");
-  }
-}
-
-function agentOf(env: Env, session: string): DurableObjectStub<PiAgent> {
-  return (env.PiAgent as unknown as DurableObjectNamespace<PiAgent>).getByName(session);
-}
-
-function sessionAgent(c: Context<{ Bindings: Env }>): DurableObjectStub<PiAgent> {
-  const id = c.req.param("id") ?? "";
-  if (!SESSION_PATTERN.test(id)) throw badRequest("invalid session id");
-  return agentOf(c.env, id);
-}
+import { AgentApi, HttpError } from "./agent-api";
 
 export const app = new Hono<{ Bindings: Env }>();
 
 app.use("/api/*", async (c, next) => {
-  const expected = c.env.API_TOKEN;
-  if (!expected || c.req.path === "/api/health") return next();
-  const given = c.req.header("authorization")?.match(/^Bearer (.+)$/)?.[1] ?? "";
-  if (!(await sameSecret(given, expected))) {
-    return c.json({ error: "Unauthorized" }, 401, { "www-authenticate": "Bearer" });
-  }
+  if (c.req.path === "/api/health") return next();
+  const denied = await AgentApi.authorize(c.req.raw, c.env.API_TOKEN);
+  if (denied) return denied;
   return next();
 });
 
-async function sameSecret(a: string, b: string): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const [x, y] = await Promise.all(
-    [a, b].map(async (value) => new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))))
-  );
-  let diff = 0;
-  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
-  return diff === 0;
-}
-
-app.get("/api/health", (c) =>
-  c.json({
-    ok: true,
-    auth: c.env.API_TOKEN ? "bearer" : "none",
-    model: MODEL_ID
-  })
-);
+app.get("/api/health", (c) => c.json(AgentApi.health(c.env)));
 
 app.post("/api/events", async (c) => {
-  const body = await readJson(c.req.raw);
-  const event = normalise(body);
-  const result = await agentOf(c.env, event.session).handleEvent(event, body.wait !== false);
-  return c.json({ event, result });
+  const body = await AgentApi.readJson(c.req.raw);
+  return c.json(await AgentApi.send(c.env, body));
 });
 
-app.get("/api/sessions/:id/repos", async (c) => {
-  if (!c.env.API_TOKEN) {
-    return c.json({ error: "Set the API_TOKEN secret first: this route hands out read tokens." }, 403);
-  }
-  return c.json({ repos: await sessionAgent(c).shareRepos() });
-});
+app.get("/api/sessions/:id/repos", async (c) =>
+  c.json(await AgentApi.repos(c.env, c.req.param("id") ?? "")),
+);
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 app.onError((error, c) => {
-  if (error instanceof HTTPException) {
+  if (error instanceof HttpError || error instanceof HTTPException) {
     return c.json({ error: error.message }, error.status);
   }
   console.error("Event Router request failed", error);
