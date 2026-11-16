@@ -29,13 +29,13 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "2.0.0-beta.v.12",
-    "@cloudflare/vitest-plugin": "^1.6.0",
-    "cf": "1.0.0-beta.28",
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.16",
+    "@cloudflare/vitest-plugin": "^1.8.1",
+    "cf": "1.0.0-beta.31",
     "typescript": "^7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "^4.145.0"
+    "wrangler": "^4.161.0"
   }
 }
