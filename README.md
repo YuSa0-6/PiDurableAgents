@@ -222,6 +222,25 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 
 `cf` に関係なく調べものをするときは `pnpm exec cf cli search "<やりたいこと>"` が使えます。
 
+### Claude Code のプラグイン
+
+このリポジトリを Claude Code で開くと、`.claude/settings.json` に書いた次の 2 つのプラグインが入ります（初回はマーケットプレイスを信頼するか聞かれます）。
+
+| プラグイン | マーケットプレイス | 中身 | 呼び方の例 |
+| --- | --- | --- | --- |
+| `pstack` | [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack)（`cursor-plugins`） | 設計・実装・レビューを丁寧に進めるスキル集（poteto 作） | `/pstack:poteto-mode`、`/pstack:setup-pstack` |
+| `yomiyasu-mini` | [`nanaism/yomiyasu-mini`](https://github.com/nanaism/yomiyasu-mini)（`yomiyasu-mini`） | AI が書いた日本語を、意味を変えずに読みやすく推敲するスキル | `yomiyasu-mini:yomiyasu-mini` |
+
+外部のマーケットプレイスは自動更新されません。新しい版にするときは次を実行します。
+
+```bash
+claude plugin marketplace update cursor-plugins && claude plugin update pstack@cursor-plugins
+```
+
+```bash
+claude plugin marketplace update yomiyasu-mini && claude plugin update yomiyasu-mini@yomiyasu-mini
+```
+
 テストは Workers ランタイムで動きます（設定は `src/tests/vitest.config.ts`）。`src/tests/worker.ts` は本番と同じ Pi Durable + Workspace の組み合わせを、pi-ai の faux モデルで動かすテスト用の Durable Object です。
 
 | テスト | 確かめること |
