@@ -1,6 +1,6 @@
 {
   "name": "d1agents-pi-durable",
-  "description": "Pi Durable agent on Cloudflare Workers + Durable Objects, driven over HTTP",
+  "description": "Pi Durable agent on Cloudflare Workers + Durable Objects, driven over HTTP and remote MCP",
   "private": true,
   "type": "module",
   "version": "0.0.0",
@@ -22,6 +22,7 @@
     "@earendil-works/pi-durable": "~1.5.0",
     "@earendil-works/pi-schema": "~1.5.0",
     "@earendil-works/pi-telemetry": "~1.5.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "@platformatic/vfs": "^0.5.0",
     "agents": "^0.33.0",
     "hono": "^4.13.16",

@@ -5,7 +5,7 @@ import {
   fauxToolCall,
   type AssistantMessage,
   type Message,
-  type TranscriptContext
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
@@ -16,6 +16,8 @@ import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { Extension } from "@earendil-works/pi-durable";
+import type { RouterEvent } from "../event";
+import { EventSession } from "../event-session";
 import { createArtifactsExtension, type ArtifactsClient } from "../extensions/artifacts";
 import { createCodemodeExtension } from "../extensions/codemode";
 import { createGitExtension } from "../extensions/git";
@@ -27,9 +29,7 @@ function textOf(content: Message["content"] | undefined): string {
   if (content === undefined) return "";
   if (typeof content === "string") return content;
   return content
-    .map((part) =>
-      "text" in part && typeof part.text === "string" ? part.text : ""
-    )
+    .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
     .join("");
 }
 
@@ -37,22 +37,20 @@ function script(context: TranscriptContext): AssistantMessage {
   const last = context.messages.filter((m) => m.role !== "system").at(-1);
   if (last?.role === "toolResult") {
     return fauxAssistantMessage([
-      fauxText(
-        `${last.isError ? "tool failed" : "tool said"}: ${textOf(last.content)}`
-      )
+      fauxText(`${last.isError ? "tool failed" : "tool said"}: ${textOf(last.content)}`),
     ]);
   }
   const prompt = last?.role === "user" ? textOf(last.content) : "";
   const codemode = /^codemode ([\s\S]+)$/.exec(prompt);
   if (codemode) {
     return fauxAssistantMessage([fauxToolCall("codemode", { code: codemode[1] })], {
-      stopReason: "toolUse"
+      stopReason: "toolUse",
     });
   }
   const read = /^read (\S+)$/.exec(prompt);
   if (read) {
     return fauxAssistantMessage([fauxToolCall("read", { path: read[1] })], {
-      stopReason: "toolUse"
+      stopReason: "toolUse",
     });
   }
   return fauxAssistantMessage([fauxText(`echo: ${prompt}`)]);
@@ -61,7 +59,7 @@ function script(context: TranscriptContext): AssistantMessage {
 export class PiHarnessTestObject extends DurableObject<Env> {
   readonly #faux = fauxProvider({
     tokensPerSecond: 200,
-    tokenSize: { min: 2, max: 4 }
+    tokenSize: { min: 2, max: 4 },
   });
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
@@ -71,9 +69,9 @@ export class PiHarnessTestObject extends DurableObject<Env> {
         id: JAVASCRIPT_BACKEND,
         loader: this.env.LOADER,
         root: "/workspace",
-        access: "read-write"
-      })
-    ]
+        access: "read-write",
+      }),
+    ],
   });
   readonly registry = createRegistry();
   readonly #artifactsCalls: string[] = [];
@@ -81,7 +79,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     createWorkspaceExtension(this.workspace),
     createGitExtension(this.workspace),
     createArtifactsExtension(this.workspace, this.#fakeArtifacts(), { pollMs: 1 }),
-    createCodemodeExtension()
+    createCodemodeExtension(),
   ];
   readonly harness = new PiHarness({
     harness: async ({ storage, context, onWake }) => {
@@ -95,12 +93,12 @@ export class PiHarnessTestObject extends DurableObject<Env> {
           registry: this.registry,
           onWake,
           settings: { retry: { enabled: false, maxRetries: 0, baseDelayMs: 0 } },
-          onReport: (report) => console.warn("pi report", report)
+          onReport: (report) => console.warn("pi report", report),
         },
-        context
+        context,
       );
     },
-    defaults: { model: this.#faux.getModel() }
+    defaults: { model: this.#faux.getModel() },
   });
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
@@ -109,12 +107,49 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     this.#faux.setResponses(Array.from({ length: 200 }, () => script));
   }
 
+  async handleEvent(event: RouterEvent, wait = true) {
+    return EventSession.run(this.harness.session(), event, wait);
+  }
+
+  async shareRepos() {
+    return [
+      {
+        name: "demo",
+        remote: "https://example.test/demo.git",
+        defaultBranch: "main",
+        lastPushAt: null,
+        readToken: "read-token",
+        expiresAt: "2026-11-07T01:00:00Z",
+      },
+    ];
+  }
+
+  async eventSources(): Promise<string[]> {
+    const sources: string[] = [];
+    for (const entry of await this.harness.messages()) {
+      if (
+        entry.kind !== "app.event" ||
+        typeof entry.data !== "object" ||
+        entry.data === null ||
+        !("source" in entry.data)
+      ) {
+        continue;
+      }
+      const source = entry.data.source;
+      if (typeof source === "string") sources.push(source);
+    }
+    return sources;
+  }
+
   async prompt(text: string): Promise<PiOperationResult> {
     const { messages: _messages, ...result } = await this.harness.prompt(text);
     return result;
   }
 
-  async runTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+  async runTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{ text: string; isError: boolean }> {
     const tool = this.#extensions
       .flatMap((extension) => extension.tools ?? [])
       .find((candidate) => candidate.name === name);
@@ -129,7 +164,10 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   }
 
   #fakeArtifacts(): ArtifactsClient {
-    const repos = new Map<string, { defaultBranch: string; source: string | null; pendingReads: number }>();
+    const repos = new Map<
+      string,
+      { defaultBranch: string; source: string | null; pendingReads: number }
+    >();
     const calls = this.#artifactsCalls;
     let tokens = 0;
     const remote = (name: string) => `https://fake artifacts/git/d1agents/${name}.git`;
@@ -144,7 +182,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
         updatedAt: "2026-11-07T00:00:00Z",
         lastPushAt: null,
         source: repo.source,
-        readOnly: false
+        readOnly: false,
       };
     };
     const created = (name: string) => ({
@@ -153,12 +191,16 @@ export class PiHarnessTestObject extends DurableObject<Env> {
       description: null,
       defaultBranch: repos.get(name)!.defaultBranch,
       remote: remote(name),
-      token: `${FAKE_ARTIFACTS_TOKEN}_initial_${name}`
+      token: `${FAKE_ARTIFACTS_TOKEN}_initial_${name}`,
     });
     return {
       create: async (name, opts) => {
         if (repos.has(name)) throw new Error(`ALREADY_EXISTS: ${name}`);
-        repos.set(name, { defaultBranch: opts?.setDefaultBranch ?? "main", source: null, pendingReads: 0 });
+        repos.set(name, {
+          defaultBranch: opts?.setDefaultBranch ?? "main",
+          source: null,
+          pendingReads: 0,
+        });
         calls.push(`create ${name}`);
         return created(name);
       },
@@ -174,19 +216,30 @@ export class PiHarnessTestObject extends DurableObject<Env> {
       },
       list: async () => [...repos.keys()].map(info),
       import: async (name, source) => {
-        repos.set(name, { defaultBranch: source.branch ?? "main", source: source.url, pendingReads: 2 });
+        repos.set(name, {
+          defaultBranch: source.branch ?? "main",
+          source: source.url,
+          pendingReads: 2,
+        });
         calls.push(`import ${name} from ${source.url}`);
         return created(name);
       },
       createToken: async (name, scope = "write") => {
         const id = `t${++tokens}`;
         calls.push(`token ${scope} ${name} ${id}`);
-        return { id, plaintext: `${FAKE_ARTIFACTS_TOKEN}_${id}?expires=1`, scope, expiresAt: "2026-11-07T00:00:00Z" };
+        return {
+          id,
+          plaintext: `${FAKE_ARTIFACTS_TOKEN}_${id}?expires=1`,
+          scope,
+          expiresAt: "2026-11-07T00:00:00Z",
+        };
       },
       revokeToken: async (name, tokenOrId) => {
-        calls.push(`revoke ${name} ${tokenOrId.startsWith(FAKE_ARTIFACTS_TOKEN) ? "initial" : tokenOrId}`);
+        calls.push(
+          `revoke ${name} ${tokenOrId.startsWith(FAKE_ARTIFACTS_TOKEN) ? "initial" : tokenOrId}`,
+        );
         return true;
-      }
+      },
     };
   }
 
