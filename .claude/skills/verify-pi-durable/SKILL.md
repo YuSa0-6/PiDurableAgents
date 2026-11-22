@@ -9,13 +9,14 @@ description: Drive the D1Agents Pi Durable Worker the way a user does (cf dev, t
 
 ## 前提
 
-| 必要なもの              | 確かめ方                              | ないとき                                                                                                                       |
-| ----------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Cloudflare の認証       | `cf dev` が起動する                   | `CLOUDFLARE_API_TOKEN` を入れるか `bunx cf auth login`。AI と Artifacts は `dev.remote: true` なので、ローカルだけでは動かない |
-| アカウント API トークン | `CLOUDFLARE_ACCOUNT_TOKEN` が空でない | ダッシュボードの Manage Account → Account API Tokens で作る。Worker は `/accounts/<ACCOUNT_ID>/tokens/verify` で確かめる       |
-| 依存                    | `node_modules` がある                 | `bun install`                                                                                                                  |
+| 必要なもの                | 確かめ方                                                                      | ないとき                                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cloudflare の認証         | `cf dev` が起動する                                                           | `CLOUDFLARE_API_TOKEN` を入れるか `bunx cf auth login`。AI と Artifacts は `dev.remote: true` なので、ローカルだけでは動かない                         |
+| Access のサービストークン | `CLOUDFLARE_ACCESS_CLIENT_ID` と `CLOUDFLARE_ACCESS_CLIENT_SECRET` が空でない | `*.workers.dev` が Cloudflare Access の後ろにあるので、リモートのバインディングにつなぐときに要る。対話できる端末なら `cloudflared` のログインでもよい |
+| アカウント API トークン   | `CLOUDFLARE_ACCOUNT_TOKEN` が空でない                                         | ダッシュボードの Manage Account → Account API Tokens で作る。Worker は `/accounts/<ACCOUNT_ID>/tokens/verify` で確かめる                               |
+| 依存                      | `node_modules` がある                                                         | `bun install`                                                                                                                                          |
 
-認証がない環境(ネットワーク制限のあるクラウドなど)では起動できません。そのときは「未検証」と記録に書き、検証できる環境で走らせます。テストやモックの結果で代わりにしません。
+認証がない環境(ネットワーク制限のあるクラウドなど)では起動できません。プロキシが `api.cloudflare.com` などに認証を差し込むクラウド環境では、`cf dev` 用の 3 つの変数はダミーの値で起動できます。`CLOUDFLARE_ACCOUNT_TOKEN` は Worker(workerd)とローカルの curl がそのまま送るので、本物のトークンが要ります。そのときは「未検証」と記録に書き、検証できる環境で走らせます。テストやモックの結果で代わりにしません。
 
 ## 手順
 
