@@ -11,7 +11,7 @@ import {
   redacting,
   Refusal,
   requireAgentBranch,
-  workspacePath
+  workspacePath,
 } from "./git";
 
 export type ArtifactsClient = Pick<
@@ -35,7 +35,7 @@ function repoName(name: string): string {
   const trimmed = name.trim();
   if (!REPO_NAME.test(trimmed) || trimmed.includes("__")) {
     throw new Refusal(
-      `${name} is not a valid repository name: start with a letter or digit, then letters, digits, ".", "_" or "-" (no "__"), up to 63 characters.`
+      `${name} is not a valid repository name: start with a letter or digit, then letters, digits, ".", "_" or "-" (no "__"), up to 63 characters.`,
     );
   }
   return trimmed;
@@ -43,13 +43,18 @@ function repoName(name: string): string {
 
 export function nameFromUrl(url: string): string {
   const last = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "repo";
-  return last.replace(/\.git$/, "").replace(/[^A-Za-z0-9._-]/g, "-").replace(/^[^A-Za-z0-9]+/, "") || "repo";
+  return (
+    last
+      .replace(/\.git$/, "")
+      .replace(/[^A-Za-z0-9._-]/g, "-")
+      .replace(/^[^A-Za-z0-9]+/, "") || "repo"
+  );
 }
 
 export function createArtifactsExtension(
   workspace: Workspace,
   artifacts: ArtifactsClient,
-  options: ArtifactsOptions = {}
+  options: ArtifactsOptions = {},
 ): Extension {
   const git = workspace.git;
   const pollMs = options.pollMs ?? 2_000;
@@ -57,7 +62,7 @@ export function createArtifactsExtension(
   const withToken = async (
     name: string,
     scope: "read" | "write",
-    work: (token: string, remote: string) => Promise<ReturnType<typeof ok>>
+    work: (token: string, remote: string) => Promise<ReturnType<typeof ok>>,
   ) => {
     const { remote } = await artifacts.get(name);
     const token = await artifacts.createToken(name, scope, OPERATION_TOKEN_TTL);
@@ -101,10 +106,10 @@ export function createArtifactsExtension(
             "To work on existing code: repo_import its public Git URL (it is cloned into /workspace).",
             "To start a project: repo_create. Then git_branch to a branch under agent/, edit files, check your work,",
             "git_commit and repo_push. Push only agent/ branches; you cannot push the default branch or force push.",
-            "Do not try to push with exec."
+            "Do not try to push with exec.",
           ].join(" "),
-        tag: false
-      }
+        tag: false,
+      },
     ],
     tools: [
       defineTool({
@@ -114,26 +119,29 @@ export function createArtifactsExtension(
         parameters: obj({
           url: str({ description: "HTTPS Git URL, e.g. https://github.com/owner/repo." }),
           name: opt(str({ description: "Repository name. Default: from the URL." })),
-          branch: opt(str({ description: "Branch to import. Default: the remote's default branch." })),
-          dir: opt(str({ description: "Where to clone. Default: /workspace/<name>." }))
+          branch: opt(
+            str({ description: "Branch to import. Default: the remote's default branch." }),
+          ),
+          dir: opt(str({ description: "Where to clone. Default: /workspace/<name>." })),
         }),
         replay: "unsafe",
         execute: (args) =>
           guarded(async () => {
             const url = new URL(args.url);
-            if (url.protocol !== "https:") throw new Refusal("Only HTTPS Git URLs can be imported.");
+            if (url.protocol !== "https:")
+              throw new Refusal("Only HTTPS Git URLs can be imported.");
             const name = repoName(args.name ?? nameFromUrl(args.url));
             const dir = workspacePath(args.dir ?? `/workspace/${name}`);
             const imported = await artifacts.import(name, {
               url: args.url,
-              ...(args.branch ? { branch: args.branch } : {})
+              ...(args.branch ? { branch: args.branch } : {}),
             });
             await dropInitialToken(name, imported.token);
             await waitUntilReady(name);
             const cloned = await clone(name, dir, args.branch);
             if (cloned.isError) return cloned;
             return ok(`Imported ${args.url} as ${name}. ${textOf(cloned)}`);
-          })
+          }),
       }),
       defineTool({
         name: "repo_create",
@@ -142,7 +150,7 @@ export function createArtifactsExtension(
         parameters: obj({
           name: str({ description: "Repository name: letters, digits, '.', '_' or '-'." }),
           description: opt(str({ description: "One line about the project." })),
-          dir: opt(str({ description: "Local directory. Default: /workspace/<name>." }))
+          dir: opt(str({ description: "Local directory. Default: /workspace/<name>." })),
         }),
         replay: "unsafe",
         execute: (args) =>
@@ -151,16 +159,16 @@ export function createArtifactsExtension(
             const dir = workspacePath(args.dir ?? `/workspace/${name}`);
             const created = await artifacts.create(name, {
               ...(args.description ? { description: args.description } : {}),
-              setDefaultBranch: "main"
+              setDefaultBranch: "main",
             });
             await dropInitialToken(name, created.token);
             await workspace.fs.mkdir(dir, { recursive: true });
             await git.init({ dir, defaultBranch: created.defaultBranch || "main" });
             return ok(
               `Created ${name} and a local repository at ${dir} on ${created.defaultBranch || "main"}. ` +
-                `Add files, git_branch to ${BRANCH_PREFIX}..., git_commit, then repo_push.`
+                `Add files, git_branch to ${BRANCH_PREFIX}..., git_commit, then repo_push.`,
             );
-          })
+          }),
       }),
       defineTool({
         name: "repo_clone",
@@ -168,21 +176,21 @@ export function createArtifactsExtension(
         parameters: obj({
           name: str({ description: "Repository name, as repo_list shows it." }),
           dir: opt(str({ description: "Where to clone. Default: /workspace/<name>." })),
-          ref: opt(str({ description: "Branch, tag or commit. Default: the default branch." }))
+          ref: opt(str({ description: "Branch, tag or commit. Default: the default branch." })),
         }),
         replay: "unsafe",
         execute: (args) =>
           guarded(async () => {
             const name = repoName(args.name);
             return clone(name, workspacePath(args.dir ?? `/workspace/${name}`), args.ref);
-          })
+          }),
       }),
       defineTool({
         name: "repo_push",
         description: `Push the current branch (it must be under ${BRANCH_PREFIX}) to the same branch of the session's Artifacts repository.`,
         parameters: obj({
           name: str({ description: "Repository name, as repo_list shows it." }),
-          dir: str({ description: "The local working tree, an absolute path under /workspace." })
+          dir: str({ description: "The local working tree, an absolute path under /workspace." }),
         }),
         replay: "unsafe",
         execute: (args) =>
@@ -197,12 +205,13 @@ export function createArtifactsExtension(
                 url: remote,
                 ref: branch,
                 remoteRef: branch,
-                headers: gitHeaders(token)
+                headers: gitHeaders(token),
               });
-              if (!result.ok) return fail(`Push of ${branch} failed: ${result.error ?? "unknown error"}`);
+              if (!result.ok)
+                return fail(`Push of ${branch} failed: ${result.error ?? "unknown error"}`);
               return ok(`Pushed ${branch} to ${name}.`);
             });
-          })
+          }),
       }),
       defineTool({
         name: "repo_list",
@@ -217,13 +226,13 @@ export function createArtifactsExtension(
               list
                 .map(
                   (repo) =>
-                    `${repo.name} (default ${repo.defaultBranch}, last push ${repo.lastPushAt ?? "never"}${repo.source ? `, from ${repo.source}` : ""})`
+                    `${repo.name} (default ${repo.defaultBranch}, last push ${repo.lastPushAt ?? "never"}${repo.source ? `, from ${repo.source}` : ""})`,
                 )
-                .join("\n")
+                .join("\n"),
             );
-          })
-      })
-    ]
+          }),
+      }),
+    ],
   };
 }
 

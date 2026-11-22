@@ -28,7 +28,9 @@ describe("the artifacts tools", () => {
     expect(created.isError).toBe(false);
     expect(created.text).toContain("/workspace/hello on main");
     await stub.writeWorkspaceFile("/workspace/hello/README.md", "# hello\n");
-    expect((await stub.runTool("git_branch", { dir: "/workspace/hello", name: "agent/start" })).isError).toBe(false);
+    expect(
+      (await stub.runTool("git_branch", { dir: "/workspace/hello", name: "agent/start" })).isError,
+    ).toBe(false);
     const commit = await stub.runTool("git_commit", { dir: "/workspace/hello", message: "Start" });
     expect(commit.text).toMatch(/^Committed 1 file\(s\) on agent\/start as [0-9a-f]{7}\.$/);
     expect(await stub.artifactsCalls()).toEqual(["create hello", "revoke hello initial"]);
@@ -49,7 +51,9 @@ describe("the artifacts tools", () => {
       expect((await stub.runTool("repo_create", { name })).isError).toBe(true);
     }
     expect((await stub.runTool("repo_create", { name: "ok", dir: "/etc/ok" })).isError).toBe(true);
-    expect((await stub.runTool("repo_import", { url: "http://example.com/x.git" })).isError).toBe(true);
+    expect((await stub.runTool("repo_import", { url: "http://example.com/x.git" })).isError).toBe(
+      true,
+    );
     expect(await stub.artifactsCalls()).toEqual([]);
   });
 
@@ -64,7 +68,7 @@ describe("the artifacts tools", () => {
       "get tool (importing)",
       "get tool (importing)",
       "token read tool t1",
-      "revoke tool t1"
+      "revoke tool t1",
     ]);
   });
 

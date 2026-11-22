@@ -27,7 +27,7 @@ export function requireAgentBranch(branch: string): void {
   if (!BRANCH_PATTERN.test(branch) || badPart) {
     throw new Refusal(
       `Branch ${branch} is not allowed. Work on a branch under ${BRANCH_PREFIX}, ` +
-        "created with git_branch; the default branch is never pushed."
+        "created with git_branch; the default branch is never pushed.",
     );
   }
 }
@@ -46,7 +46,9 @@ export function fail(text: string): ToolExecutionResult {
   return { output: [{ type: "text", text }], isError: true };
 }
 
-export async function guarded(run: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult> {
+export async function guarded(
+  run: () => Promise<ToolExecutionResult>,
+): Promise<ToolExecutionResult> {
   try {
     return await run();
   } catch (error) {
@@ -56,7 +58,7 @@ export async function guarded(run: () => Promise<ToolExecutionResult>): Promise<
 
 export async function redacting(
   secrets: readonly string[],
-  work: () => Promise<ToolExecutionResult>
+  work: () => Promise<ToolExecutionResult>,
 ): Promise<ToolExecutionResult> {
   const scrub = (text: string) =>
     secrets.filter(Boolean).reduce((out, secret) => out.replaceAll(secret, "[redacted]"), text);
@@ -69,12 +71,14 @@ export async function redacting(
   return {
     ...result,
     output: (result.output ?? []).map((part) =>
-      part.type === "text" ? { ...part, text: scrub(part.text) } : part
-    )
+      part.type === "text" ? { ...part, text: scrub(part.text) } : part,
+    ),
   };
 }
 
-const DirParam = str({ description: "The repository's working tree, an absolute path under /workspace." });
+const DirParam = str({
+  description: "The repository's working tree, an absolute path under /workspace.",
+});
 
 export function createGitExtension(workspace: Workspace): Extension {
   const git = workspace.git;
@@ -86,7 +90,9 @@ export function createGitExtension(workspace: Workspace): Extension {
         description: `Create a branch under ${BRANCH_PREFIX} from HEAD and switch to it. Do this before committing.`,
         parameters: obj({
           dir: DirParam,
-          name: str({ description: `New branch name. Must start with ${BRANCH_PREFIX}, e.g. agent/fix-typo.` })
+          name: str({
+            description: `New branch name. Must start with ${BRANCH_PREFIX}, e.g. agent/fix-typo.`,
+          }),
         }),
         replay: "unsafe",
         execute: (args) =>
@@ -95,28 +101,38 @@ export function createGitExtension(workspace: Workspace): Extension {
             requireAgentBranch(args.name);
             await git.branch({ dir: where, name: args.name, checkout: true });
             return ok(`Created ${args.name} in ${where} and switched to it.`);
-          })
+          }),
       }),
       defineTool({
         name: "git_commit",
-        description: "Stage every change in the working tree (new, modified and deleted files) and commit it.",
+        description:
+          "Stage every change in the working tree (new, modified and deleted files) and commit it.",
         parameters: obj({
           dir: DirParam,
-          message: str({ description: "Commit message: a short summary line, a blank line, then details." })
+          message: str({
+            description: "Commit message: a short summary line, a blank line, then details.",
+          }),
         }),
         replay: "unsafe",
         execute: (args) =>
           guarded(async () => {
             const where = workspacePath(args.dir);
             await git.add({ dir: where, paths: [], all: true });
-            const staged = (await git.status({ dir: where })).filter((entry) => entry.index !== " ");
-            if (staged.length === 0) return fail("Nothing to commit: the working tree matches HEAD.");
-            const { oid } = await git.commit({ dir: where, message: args.message, author: COMMIT_AUTHOR });
-            return ok(
-              `Committed ${staged.length} file(s) on ${await currentBranch(workspace, where)} as ${oid.slice(0, 7)}.`
+            const staged = (await git.status({ dir: where })).filter(
+              (entry) => entry.index !== " ",
             );
-          })
-      })
-    ]
+            if (staged.length === 0)
+              return fail("Nothing to commit: the working tree matches HEAD.");
+            const { oid } = await git.commit({
+              dir: where,
+              message: args.message,
+              author: COMMIT_AUTHOR,
+            });
+            return ok(
+              `Committed ${staged.length} file(s) on ${await currentBranch(workspace, where)} as ${oid.slice(0, 7)}.`,
+            );
+          }),
+      }),
+    ],
   };
 }

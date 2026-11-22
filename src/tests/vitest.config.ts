@@ -7,21 +7,21 @@ const testsDir = import.meta.dirname;
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      wrangler: { configPath: path.join(testsDir, "wrangler.jsonc") }
-    })
+      wrangler: { configPath: path.join(testsDir, "wrangler.jsonc") },
+    }),
   ],
   resolve: {
     dedupe: [
       "@earendil-works/chord",
       "@earendil-works/pi-ai",
       "@earendil-works/pi-durable",
-      "@earendil-works/pi-telemetry"
-    ]
+      "@earendil-works/pi-telemetry",
+    ],
   },
   test: {
     name: "d1agents",
     include: [path.join(testsDir, "**/*.test.ts")],
     testTimeout: 30_000,
-    hookTimeout: 30_000
-  }
+    hookTimeout: 30_000,
+  },
 });
