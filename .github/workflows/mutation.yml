@@ -38,7 +38,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ -n "$BASE_SHA" ]; then
-            files="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" HEAD -- 'src/*.ts' | grep -v '^src/tests/' | paste -sd, - || true)"
+            files="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" HEAD -- 'src/*.ts' | grep -vE '^src/tests/|\.test\.ts$' | paste -sd, - || true)"
           else
             files=""
           fi
