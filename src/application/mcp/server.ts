@@ -39,9 +39,6 @@ const reposInput = z.object({
   session: z.string().describe("Session name, the Durable Object name used with send_event."),
 });
 
-type SendInput = z.infer<typeof sendInput>;
-type ReposInput = z.infer<typeof reposInput>;
-
 export class AgentMcp {
   static readonly path = "/mcp";
 
@@ -68,7 +65,14 @@ export class AgentMcp {
           "Send an instruction to the Pi agent. Same validation and dispatch as POST /api/events. The conversation log records source mcp.",
         inputSchema: sendInput,
       },
-      (input) => AgentMcp.#sendEvent(app, input),
+      (input) =>
+        AgentMcp.#reply(() =>
+          sendEvent(
+            app,
+            { text: input.text, session: input.session, id: input.id, wait: input.wait },
+            "mcp",
+          ),
+        ),
     );
     server.registerTool(
       "session_repos",
@@ -78,7 +82,7 @@ export class AgentMcp {
           "List one session's Artifacts repositories and a one-hour read-only git token for each. Same payload as GET /api/sessions/:id/repos.",
         inputSchema: reposInput,
       },
-      (input) => AgentMcp.#sessionRepos(app, input),
+      (input) => AgentMcp.#reply(() => listSessionRepos(app.agents, input.session)),
     );
     server.registerTool(
       "health",
@@ -88,51 +92,24 @@ export class AgentMcp {
           "Report whether the worker is up and which model it uses. Same payload as GET /api/health.",
         annotations: { readOnlyHint: true },
       },
-      () => AgentMcp.#health(app),
+      () => AgentMcp.#reply(() => health(app.model)),
     );
     return server;
   }
 
-  static async #sendEvent(app: App, input: SendInput) {
+  static async #reply(run: () => unknown) {
     try {
-      return AgentMcp.#ok(
-        await sendEvent(
-          app,
-          { text: input.text, session: input.session, id: input.id, wait: input.wait },
-          "mcp",
-        ),
-      );
+      return AgentMcp.#text(await run());
     } catch (error) {
-      return AgentMcp.#fail(error);
+      return {
+        isError: true as const,
+        ...AgentMcp.#text({ error: error instanceof Error ? error.message : "Request failed" }),
+      };
     }
   }
 
-  static async #sessionRepos(app: App, input: ReposInput) {
-    try {
-      return AgentMcp.#ok(await listSessionRepos(app.agents, input.session));
-    } catch (error) {
-      return AgentMcp.#fail(error);
-    }
-  }
-
-  static #health(app: App) {
-    try {
-      return AgentMcp.#ok(health(app.model));
-    } catch (error) {
-      return AgentMcp.#fail(error);
-    }
-  }
-
-  static #ok(value: unknown) {
+  static #text(value: unknown) {
     return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
-  }
-
-  static #fail(error: unknown) {
-    const message = error instanceof Error ? error.message : "Request failed";
-    return {
-      isError: true as const,
-      content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
-    };
   }
 
   static #cors(response: Response): Response {
