@@ -1,7 +1,7 @@
-import { AgentMcp } from "./mcp";
-import { app } from "./router";
+import { AgentMcp } from "./mcp/server";
+import { app } from "./http/router";
 
-export { PiAgent } from "./agent";
+export { PiAgent } from "./pi-agent";
 
 export default {
   fetch: (request, env, ctx) =>

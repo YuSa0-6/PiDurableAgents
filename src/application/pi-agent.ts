@@ -8,15 +8,15 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
-import type { AgentEvent, EventResult } from "./domain/event";
-import type { SharedRepo } from "./domain/shared-repo";
-import { EventSession } from "./infra/pi/event-session";
-import { shareRepos } from "./infra/pi/share-repos";
-import { gatewayOpenRouterProvider, openRouterModel } from "./infra/llm/openrouter";
-import { artifactsSessionId, createArtifactsExtension } from "./infra/pi/extensions/artifacts";
-import { createCodemodeExtension } from "./infra/pi/extensions/codemode";
-import { createGitExtension } from "./infra/pi/extensions/git";
-import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "./infra/pi/extensions/workspace";
+import type { AgentEvent, EventResult } from "../domain/event";
+import type { SharedRepo } from "../domain/shared-repo";
+import { EventSession } from "../infra/pi/event-session";
+import { shareRepos } from "../infra/pi/share-repos";
+import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
+import { artifactsSessionId, createArtifactsExtension } from "../infra/pi/extensions/artifacts";
+import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
+import { createGitExtension } from "../infra/pi/extensions/git";
+import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export class PiAgent extends DurableObject<Env> {
   readonly ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });

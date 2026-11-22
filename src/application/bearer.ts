@@ -1,4 +1,4 @@
-import type { Authenticator } from "./usecase/ports/authenticator";
+import type { Authenticator } from "../usecase/ports/authenticator";
 
 const UNAUTHORIZED = "Send an active Account API token as Authorization: Bearer <token>";
 
