@@ -32,7 +32,7 @@ TypeScript のコードに直接かけられる検証器はこの環境にない
 
 ## 手順
 
-1. 変更が下の「対象のコード」に触れるか確かめる。`git diff <同期コミット> -- src/domain/artifacts-session-id.ts src/domain/session-id.ts src/application/pi-agent.ts`
+1. 変更が下の「対象のコード」に触れるか確かめる。`git diff <同期コミット> -- src/domain/artifacts-session-id.ts src/domain/session-id.ts src/application/pi-agent.ts package.json`(`package.json` は `@cloudflare/computer` の版を見るため)
 2. 検査を流す(1 秒以内):
 
    ```sh
