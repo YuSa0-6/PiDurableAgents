@@ -13,7 +13,7 @@
     // Peer dependencies of @cloudflare/computer.
     "@platformatic/vfs",
     "zod",
-    // CLIs, run as `pnpm exec cf` and `pnpm exec wrangler` (see README "ツールチェーン").
+    // CLIs, run as `bunx cf` and `bunx wrangler` (see README "ツールチェーン").
     // Wrangler is only for what cf beta lacks: secrets and tail.
     "cf",
     "wrangler"

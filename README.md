@@ -28,24 +28,24 @@ flowchart LR
   T --> AR[(Artifacts)]
 ```
 
-| 層 | ファイル | 役割 |
-| --- | --- | --- |
-| Worker の入口 | `src/index.ts` | `/mcp` を MCP に、それ以外を Event Router に渡し、PiAgent を公開する |
-| Event Router | `src/router.ts` | Hono で HTTP を受け、認証し、`AgentApi` に渡す |
-| 受付 | `src/agent-api.ts` | 認証、依頼の検証（空の依頼と 8,000 文字を超える依頼は断る）、PiAgent への配送。HTTP と MCP が共用する |
-| MCP | `src/mcp.ts` | Streamable HTTP の `/mcp`。ツールは `AgentApi` を呼ぶ |
-| イベント | `src/event.ts` | そろえたイベントの型 |
-| 会話への記録 | `src/event-session.ts` | 依頼を Pi の会話ログに載せる（`source` は出どころ） |
-| モデル | `src/model.ts` | GLM 5.3 の情報と、AI Gateway 経由で OpenRouter を呼ぶプロバイダー |
-| PiAgent | `src/agent.ts` | Pi Durable を動かす Durable Object |
-| pi 拡張 | `src/extensions/` | モデルに見えるもの（システムプロンプトとツール）。下の表 |
+| 層            | ファイル               | 役割                                                                                                  |
+| ------------- | ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| Worker の入口 | `src/index.ts`         | `/mcp` を MCP に、それ以外を Event Router に渡し、PiAgent を公開する                                  |
+| Event Router  | `src/router.ts`        | Hono で HTTP を受け、認証し、`AgentApi` に渡す                                                        |
+| 受付          | `src/agent-api.ts`     | 認証、依頼の検証（空の依頼と 8,000 文字を超える依頼は断る）、PiAgent への配送。HTTP と MCP が共用する |
+| MCP           | `src/mcp.ts`           | Streamable HTTP の `/mcp`。ツールは `AgentApi` を呼ぶ                                                 |
+| イベント      | `src/event.ts`         | そろえたイベントの型                                                                                  |
+| 会話への記録  | `src/event-session.ts` | 依頼を Pi の会話ログに載せる（`source` は出どころ）                                                   |
+| モデル        | `src/model.ts`         | GLM 5.3 の情報と、AI Gateway 経由で OpenRouter を呼ぶプロバイダー                                     |
+| PiAgent       | `src/agent.ts`         | Pi Durable を動かす Durable Object                                                                    |
+| pi 拡張       | `src/extensions/`      | モデルに見えるもの（システムプロンプトとツール）。下の表                                              |
 
-| pi 拡張 | ファイル | 中身 |
-| --- | --- | --- |
+| pi 拡張     | ファイル                      | 中身                                                                                       |
+| ----------- | ----------------------------- | ------------------------------------------------------------------------------------------ |
 | `workspace` | `src/extensions/workspace.ts` | システムプロンプトと、Durable Object の SQLite 上のファイル操作・JavaScript 実行（`exec`） |
-| `git` | `src/extensions/git.ts` | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など） |
-| `artifacts` | `src/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧） |
-| `codemode` | `src/extensions/codemode.ts` | スクリプトからツールをまとめて呼ぶ Code Mode |
+| `git`       | `src/extensions/git.ts`       | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など）                  |
+| `artifacts` | `src/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧）                     |
+| `codemode`  | `src/extensions/codemode.ts`  | スクリプトからツールをまとめて呼ぶ Code Mode                                               |
 
 1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 
@@ -55,45 +55,45 @@ GLM 5.3（`z-ai/glm-5.3`、OpenRouter の 100 万トークンあたり入力 $0.
 
 ### OpenRouter の呼び方
 
-| 項目 | 内容 |
-| --- | --- |
-| API キー | AI Gateway `d1agents` の Provider Keys に登録（BYOK）。Worker はキーを持たない |
-| Gateway の指定 | `cloudflare.config.ts` の `AI_GATEWAY_ID` |
-| Pi への登録 | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
-| モデル情報 | pi-ai の OpenRouter カタログから取得 |
+| 項目           | 内容                                                                                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API キー       | AI Gateway `d1agents` の Provider Keys に登録（BYOK）。Worker はキーを持たない                                                                     |
+| Gateway の指定 | `cloudflare.config.ts` の `AI_GATEWAY_ID`                                                                                                          |
+| Pi への登録    | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
+| モデル情報     | pi-ai の OpenRouter カタログから取得                                                                                                               |
 
 Gemini は再帰する JSON スキーマを受け付けません。そのため `exec` ツールの `input` は「任意のオブジェクト」として渡しています（`src/extensions/workspace.ts`）。
 
 ## API
 
-| メソッド | パス | 内容 |
-| --- | --- | --- |
-| GET | `/api/health` | 動作確認と、使っているモデル |
-| POST | `/api/events` | エージェントに依頼する |
-| GET | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン |
+| メソッド | パス                      | 内容                                                                      |
+| -------- | ------------------------- | ------------------------------------------------------------------------- |
+| GET      | `/api/health`             | 動作確認と、使っているモデル                                              |
+| POST     | `/api/events`             | エージェントに依頼する                                                    |
+| GET      | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン |
 
 ### 認証
 
 `/api/*` と MCP の `/mcp` は、この Cloudflare アカウントの **アカウント API トークン**（Account API Token）を持つ人とエージェントだけが使えます。
 
-| 項目 | 内容 |
-| --- | --- |
-| 送り方 | `Authorization: Bearer <トークン>` ヘッダー |
-| 確かめ方 | Worker が Cloudflare API の `/accounts/<アカウント ID>/tokens/verify` に問い合わせ、`active` なら通す |
-| 通らないとき | 401 を返す |
-| トークンの作り方 | ダッシュボードの **Manage Account → Account API Tokens** で作る。権限は最小のもので足りる |
-| 止め方 | そのトークンを削除するか無効にする |
-| 例外 | MCP へのブラウザの事前リクエスト（OPTIONS）だけは Authorization を付けられないので通す |
+| 項目             | 内容                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| 送り方           | `Authorization: Bearer <トークン>` ヘッダー                                                           |
+| 確かめ方         | Worker が Cloudflare API の `/accounts/<アカウント ID>/tokens/verify` に問い合わせ、`active` なら通す |
+| 通らないとき     | 401 を返す                                                                                            |
+| トークンの作り方 | ダッシュボードの **Manage Account → Account API Tokens** で作る。権限は最小のもので足りる             |
+| 止め方           | そのトークンを削除するか無効にする                                                                    |
+| 例外             | MCP へのブラウザの事前リクエスト（OPTIONS）だけは Authorization を付けられないので通す                |
 
 `/api/events` の入力:
 
-| フィールド | 必須 | 既定値 | 説明 |
-| --- | --- | --- | --- |
-| `text` | はい | なし | エージェントへの指示 |
-| `session` | いいえ | `default` | Durable Object 名。同じ名前なら会話とファイルが続く |
-| `id` | いいえ | ランダム | 冪等キー。同じ id は 1 回だけ処理される |
-| `source` / `type` | いいえ | `http` / `message` | イベントの出どころ。会話ログに残る |
-| `wait` | いいえ | `true` | `false` で受け付けだけ返し、回答はバックグラウンドで進む |
+| フィールド        | 必須   | 既定値             | 説明                                                     |
+| ----------------- | ------ | ------------------ | -------------------------------------------------------- |
+| `text`            | はい   | なし               | エージェントへの指示                                     |
+| `session`         | いいえ | `default`          | Durable Object 名。同じ名前なら会話とファイルが続く      |
+| `id`              | いいえ | ランダム           | 冪等キー。同じ id は 1 回だけ処理される                  |
+| `source` / `type` | いいえ | `http` / `message` | イベントの出どころ。会話ログに残る                       |
+| `wait`            | いいえ | `true`             | `false` で受け付けだけ返し、回答はバックグラウンドで進む |
 
 ### 試す
 
@@ -121,23 +121,23 @@ curl https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos -H 
 
 Grok Bots などのリモート MCP コネクタから、同じ Worker を呼べます。エンドポイントは Streamable HTTP の `/mcp` です（`agents/mcp/server` の `createMcpHandler`）。OAuth はまだありません。クライアントが静的な `Authorization` ヘッダーを付けます。
 
-| ツール | 対応する API | 内容 |
-| --- | --- | --- |
-| `send_event` | `POST /api/events` | エージェントに依頼する。`text`、`session`（既定 `default`）、冪等キー `id`、`wait`（既定 `true`）。空の依頼と 8,000 文字を超える依頼は HTTP と同じ文言で断る。会話ログの `source` は `mcp`、`type` は `message` |
-| `session_repos` | `GET /api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン |
-| `health` | `GET /api/health` | 動作確認と、使っているモデル |
+| ツール          | 対応する API                  | 内容                                                                                                                                                                                                            |
+| --------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send_event`    | `POST /api/events`            | エージェントに依頼する。`text`、`session`（既定 `default`）、冪等キー `id`、`wait`（既定 `true`）。空の依頼と 8,000 文字を超える依頼は HTTP と同じ文言で断る。会話ログの `source` は `mcp`、`type` は `message` |
+| `session_repos` | `GET /api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン                                                                                                                                       |
+| `health`        | `GET /api/health`             | 動作確認と、使っているモデル                                                                                                                                                                                    |
 
 ツールの戻り値は、対応する HTTP API と同じ JSON です。検証で断ったときは `{ "error": "..." }` をツールエラーとして返します。
 
 コネクタには次を登録します。
 
-| 項目 | 値 |
-| --- | --- |
-| URL | `https://d1agents-pi-durable.itumens.workers.dev/mcp` |
-| トランスポート | Streamable HTTP |
-| ヘッダー | `Authorization: Bearer <アカウント API トークン>` |
+| 項目           | 値                                                    |
+| -------------- | ----------------------------------------------------- |
+| URL            | `https://d1agents-pi-durable.itumens.workers.dev/mcp` |
+| トランスポート | Streamable HTTP                                       |
+| ヘッダー       | `Authorization: Bearer <アカウント API トークン>`     |
 
-手元では `pnpm start` のあと、`http://localhost:5173/mcp` に同じヘッダーでつなぎます。
+手元では `bun run start` のあと、`http://localhost:5173/mcp` に同じヘッダーでつなぎます。
 
 ```bash
 npx @modelcontextprotocol/inspector --cli http://localhost:5173/mcp --method tools/list --header "Authorization: Bearer $CLOUDFLARE_ACCOUNT_TOKEN"
@@ -151,21 +151,21 @@ npx @modelcontextprotocol/inspector --cli http://localhost:5173/mcp --method too
 
 Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています。モデルは JavaScript のスクリプトを 1 つ書き、その中で自分のツールを `tools.<名前>(引数)` として呼びます。たくさんのファイルを読む、決まった順でツールを呼ぶ、といった作業を 1 回の呼び出しで済ませられます。
 
-| 項目 | 内容 |
-| --- | --- |
-| 部品 | `@earendil-works/pi-durable/codemode` の `createCodemodeExtension` と、`@earendil-works/pi-codemode/cloudflare` の `createInlineCodemodeSandbox` |
-| 実行場所 | QuickJS（WebAssembly）を、PiAgent の Durable Object の中で動かす |
-| 止まっても続く | ツールの結果を 1 つずつ記録しておき、Durable Object が再起動したら、スクリプトを最初から同じ結果で再生して続きから動かす |
-| 制限 | 計算だけで進められるのは約 3 秒（割り込み 30,000 回）、メモリ 32 MB、全体で 5 分 |
-| `models.*` | 使わない（`models: false`）。スクリプトからモデルを何度も呼ぶと、費用が見えにくくなるため |
-| ツールの決まり | スクリプトから呼んでも同じ。たとえば `tools.repo_push` で `main` を push しようとしても断られる |
+| 項目           | 内容                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 部品           | `@earendil-works/pi-durable/codemode` の `createCodemodeExtension` と、`@earendil-works/pi-codemode/cloudflare` の `createInlineCodemodeSandbox` |
+| 実行場所       | QuickJS（WebAssembly）を、PiAgent の Durable Object の中で動かす                                                                                 |
+| 止まっても続く | ツールの結果を 1 つずつ記録しておき、Durable Object が再起動したら、スクリプトを最初から同じ結果で再生して続きから動かす                         |
+| 制限           | 計算だけで進められるのは約 3 秒（割り込み 30,000 回）、メモリ 32 MB、全体で 5 分                                                                 |
+| `models.*`     | 使わない（`models: false`）。スクリプトからモデルを何度も呼ぶと、費用が見えにくくなるため                                                        |
+| ツールの決まり | スクリプトから呼んでも同じ。たとえば `tools.repo_push` で `main` を push しようとしても断られる                                                  |
 
 コードを動かすツールは 2 つあり、役割が違います。
 
-| ツール | 動くもの | 向いている作業 |
-| --- | --- | --- |
-| `exec` | ワークスペースの中の JavaScript（`node:fs` と git が使える） | ファイルを読んで計算する |
-| `codemode` | エージェント自身のツールを呼ぶスクリプト | ツールをまとめて何度も呼ぶ |
+| ツール     | 動くもの                                                     | 向いている作業             |
+| ---------- | ------------------------------------------------------------ | -------------------------- |
+| `exec`     | ワークスペースの中の JavaScript（`node:fs` と git が使える） | ファイルを読んで計算する   |
+| `codemode` | エージェント自身のツールを呼ぶスクリプト                     | ツールをまとめて何度も呼ぶ |
 
 スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`src/extensions/codemode.ts` のサンドボックスを差し替えるだけで済む作りです）。
 
@@ -173,22 +173,22 @@ Pi Durable の Code Mode（`src/extensions/codemode.ts`）を入れています�
 
 エージェントのリポジトリは Cloudflare Artifacts（Git 互換の保存場所）に置きます。pi 拡張 `artifacts`（`src/extensions/artifacts.ts`）と `git`（`src/extensions/git.ts`）が担当します。
 
-| 項目 | 内容 |
-| --- | --- |
-| 名前空間 | `d1agents`（`cloudflare.config.ts` の `ARTIFACTS` binding） |
-| リポジトリの単位 | セッションごと。Artifacts 上では `<セッション名>__<リポジトリ名>` という名前になります |
-| 認証 | binding がリポジトリごと・10 分のトークンをその都度発行し、使い終わったら取り消します。秘密情報の設定は要りません |
-| 料金 | Workers Paid プランが必要。毎月 1 万回の操作と 1 GB までは無料（課金は 2026 年 11 月 12 日から） |
+| 項目             | 内容                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 名前空間         | `d1agents`（`cloudflare.config.ts` の `ARTIFACTS` binding）                                                       |
+| リポジトリの単位 | セッションごと。Artifacts 上では `<セッション名>__<リポジトリ名>` という名前になります                            |
+| 認証             | binding がリポジトリごと・10 分のトークンをその都度発行し、使い終わったら取り消します。秘密情報の設定は要りません |
+| 料金             | Workers Paid プランが必要。毎月 1 万回の操作と 1 GB までは無料（課金は 2026 年 11 月 12 日から）                  |
 
-| ツール | 内容 |
-| --- | --- |
+| ツール        | 内容                                                                         |
+| ------------- | ---------------------------------------------------------------------------- |
 | `repo_import` | 公開されている Git リポジトリ（HTTPS）を取り込み、`/workspace` に clone する |
-| `repo_create` | 空のリポジトリを作り、`/workspace` に手元のリポジトリを用意する |
-| `repo_clone` | このセッションのリポジトリを `/workspace` に clone する |
-| `git_branch` | `agent/` で始まるブランチを作って切り替える |
-| `git_commit` | 作業ツリーの変更をすべて commit する |
-| `repo_push` | いまのブランチを、同じ名前のブランチに push する（`agent/` だけ） |
-| `repo_list` | このセッションのリポジトリの一覧 |
+| `repo_create` | 空のリポジトリを作り、`/workspace` に手元のリポジトリを用意する              |
+| `repo_clone`  | このセッションのリポジトリを `/workspace` に clone する                      |
+| `git_branch`  | `agent/` で始まるブランチを作って切り替える                                  |
+| `git_commit`  | 作業ツリーの変更をすべて commit する                                         |
+| `repo_push`   | いまのブランチを、同じ名前のブランチに push する（`agent/` だけ）            |
+| `repo_list`   | このセッションのリポジトリの一覧                                             |
 
 エージェントの成果は、`/api/sessions/:id/repos` で受け取った remote と読み取り専用トークンを使って、手元の `git` で確かめます。
 
@@ -204,33 +204,35 @@ GitHub App で push と PR を作る仕組みは、Artifacts に切り替えた�
 
 ## ツールチェーン
 
-| 道具 | 用途 | コマンド |
-| --- | --- | --- |
-| `cf` CLI（beta） | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作 | `pnpm start` / `pnpm build` / `pnpm run deploy` / `pnpm types` |
-| Vite（Vite+ と Cloudflare Vite プラグイン beta） | `cf` が中で使うビルド | `vite.config.ts` |
-| Hono | Event Router | `src/router.ts` |
-| Wrangler | ログを流して見る（`cf` が未対応のため）と、テスト用の設定 | `pnpm exec wrangler tail d1agents-pi-durable` |
-| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト | `pnpm test` |
+| 道具                                                | 用途                                                                | コマンド                                                               |
+| --------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `cf` CLI（beta）                                    | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作 | `bun run start` / `bun run build` / `bun run deploy` / `bun run types` |
+| Vite（Vite+ と Cloudflare Vite プラグイン beta）    | `cf` が中で使うビルド                                               | `vite.config.ts`                                                       |
+| Hono                                                | Event Router                                                        | `src/router.ts`                                                        |
+| Wrangler                                            | ログを流して見る（`cf` が未対応のため）と、テスト用の設定           | `bunx wrangler tail d1agents-pi-durable`                               |
+| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト                                                  | `bun run test`                                                         |
+| Bun                                                 | パッケージ管理とスクリプト実行（`cf` 自体は Node.js で動く）        | `bun install` / `bun run <name>`                                       |
+| Vite+（`vp check`）                                 | 整形（Oxfmt）、リント（Oxlint）、型チェック（tsrs）                 | `bun run check`                                                        |
 
-Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wrangler.jsonc` から `cf migrate` で移行しました。バインディングと実行環境の型は `cf` が `.cloudflare/types/` に生成します（`pnpm typecheck` が先に生成します）。
+Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wrangler.jsonc` から `cf migrate` で移行しました。バインディングと実行環境の型は `cf` が `.cloudflare/types/` に生成します（`bun run typecheck` が先に生成します）。
 
-| 項目 | 置き場所 |
-| --- | --- |
-| Worker 名、互換日、バインディング、Durable Object | `cloudflare.config.ts` |
-| ビルドの設定（プラグイン、依存の重複排除） | `vite.config.ts` |
-| 生成物（ビルド結果、型） | `.cloudflare/`（git には入れない） |
-| テスト用の Worker の設定 | `src/tests/wrangler.jsonc`（`@cloudflare/vitest-plugin` が読む） |
+| 項目                                              | 置き場所                                                         |
+| ------------------------------------------------- | ---------------------------------------------------------------- |
+| Worker 名、互換日、バインディング、Durable Object | `cloudflare.config.ts`                                           |
+| ビルドの設定（プラグイン、依存の重複排除）        | `vite.config.ts`                                                 |
+| 生成物（ビルド結果、型）                          | `.cloudflare/`（git には入れない）                               |
+| テスト用の Worker の設定                          | `src/tests/wrangler.jsonc`（`@cloudflare/vitest-plugin` が読む） |
 
-`cf` に関係なく調べものをするときは `pnpm exec cf cli search "<やりたいこと>"` が使えます。
+`cf` に関係なく調べものをするときは `bunx cf cli search "<やりたいこと>"` が使えます。
 
 ### Claude Code のプラグイン
 
 このリポジトリを Claude Code で開くと、`.claude/settings.json` に書いた次の 2 つのプラグインが入ります（初回はマーケットプレイスを信頼するか聞かれます）。
 
-| プラグイン | マーケットプレイス | 中身 | 呼び方の例 |
-| --- | --- | --- | --- |
-| `pstack` | [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack)（`cursor-plugins`） | 設計・実装・レビューを丁寧に進めるスキル集（poteto 作） | `/pstack:poteto-mode`、`/pstack:setup-pstack` |
-| `yomiyasu-mini` | [`nanaism/yomiyasu-mini`](https://github.com/nanaism/yomiyasu-mini)（`yomiyasu-mini`） | AI が書いた日本語を、意味を変えずに読みやすく推敲するスキル | `yomiyasu-mini:yomiyasu-mini` |
+| プラグイン      | マーケットプレイス                                                                         | 中身                                                        | 呼び方の例                                    |
+| --------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | --------------------------------------------- |
+| `pstack`        | [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack)（`cursor-plugins`） | 設計・実装・レビューを丁寧に進めるスキル集（poteto 作）     | `/pstack:poteto-mode`、`/pstack:setup-pstack` |
+| `yomiyasu-mini` | [`nanaism/yomiyasu-mini`](https://github.com/nanaism/yomiyasu-mini)（`yomiyasu-mini`）     | AI が書いた日本語を、意味を変えずに読みやすく推敲するスキル | `yomiyasu-mini:yomiyasu-mini`                 |
 
 外部のマーケットプレイスは自動更新されません。新しい版にするときは次を実行します。
 
@@ -244,22 +246,22 @@ claude plugin marketplace update yomiyasu-mini && claude plugin update yomiyasu-
 
 テストは Workers ランタイムで動きます（設定は `src/tests/vitest.config.ts`）。`src/tests/worker.ts` は本番と同じ Pi Durable + Workspace の組み合わせを、pi-ai の faux モデルで動かすテスト用の Durable Object です。
 
-| テスト | 確かめること |
-| --- | --- |
-| `durable.test.ts` | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること |
-| `mcp.test.ts` | MCP の initialize と tools/list、ツール呼び出しがエージェントまで届くこと（会話ログの `source` は `mcp`）、有効なアカウント API トークンがないときの 401（Cloudflare API の確認は偽物で代用） |
-| `git.test.ts` | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること |
+| テスト              | 確かめること                                                                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `durable.test.ts`   | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること                                                                                                                 |
+| `mcp.test.ts`       | MCP の initialize と tools/list、ツール呼び出しがエージェントまで届くこと（会話ログの `source` は `mcp`）、有効なアカウント API トークンがないときの 401（Cloudflare API の確認は偽物で代用）                                        |
+| `git.test.ts`       | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること                                                                                                                   |
 | `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
-| `codemode.test.ts` | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること |
+| `codemode.test.ts`  | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること                                                                                          |
 
 ## ローカルで動かす
 
 ```bash
-pnpm install
+bun install
 ```
 
 ```bash
-pnpm start
+bun run start
 ```
 
 起動したら `http://localhost:5173/api/health` などに `curl` で送れます。`AI` と `ARTIFACTS` はリモートで動かすため、`cf auth login` でログインしておく必要があります（`cf` は Wrangler のログインを使いません）。
@@ -269,27 +271,27 @@ pnpm start
 ## デプロイ
 
 ```bash
-pnpm run deploy
+bun run deploy
 ```
 
 `cf deploy` がビルドしてからデプロイします。Worker と Durable Object だけで、静的ファイル（Static Assets）はありません。アップロードせずに中身だけ確かめるときは、次のコマンドを使います。
 
 ```bash
-pnpm exec cf deploy --dry-run
+bunx cf deploy --dry-run
 ```
 
-ログを流して見る機能（`wrangler tail`）は `cf` にまだないので、`pnpm exec wrangler tail d1agents-pi-durable` を使います。
+ログを流して見る機能（`wrangler tail`）は `cf` にまだないので、`bunx wrangler tail d1agents-pi-durable` を使います。
 
 ## 元のサンプルからの変更点
 
-| 項目 | 元のサンプル | このリポジトリ |
-| --- | --- | --- |
-| 入口 | `fetch` 関数で直接振り分け | Hono の Event Router |
-| 画面 | React のチャット UI（WebSocket） | なし。HTTP API のみ |
-| モデル | 固定（Workers AI `glm-5.3-flash`） | 固定（OpenRouter の GLM 5.3、AI Gateway 経由） |
-| HTTP からの利用 | なし | `POST /api/events` と、Streamable HTTP の MCP `/mcp` |
-| ビルドとデプロイ | Vite と Wrangler | `cf` CLI（`cloudflare.config.ts`、中は Vite+） |
-| `agents` バージョン | `*`（monorepo 内） | `^0.33.0`（Pi 1.5 対応） |
-| `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`） |
+| 項目                   | 元のサンプル                               | このリポジトリ                                       |
+| ---------------------- | ------------------------------------------ | ---------------------------------------------------- |
+| 入口                   | `fetch` 関数で直接振り分け                 | Hono の Event Router                                 |
+| 画面                   | React のチャット UI（WebSocket）           | なし。HTTP API のみ                                  |
+| モデル                 | 固定（Workers AI `glm-5.3-flash`）         | 固定（OpenRouter の GLM 5.3、AI Gateway 経由）       |
+| HTTP からの利用        | なし                                       | `POST /api/events` と、Streamable HTTP の MCP `/mcp` |
+| ビルドとデプロイ       | Vite と Wrangler                           | `cf` CLI（`cloudflare.config.ts`、中は Vite+）       |
+| `agents` バージョン    | `*`（monorepo 内）                         | `^0.33.0`（Pi 1.5 対応）                             |
+| `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`）            |
 
 Pi harness 本体の設計メモは [`docs/upstream-README.md`](docs/upstream-README.md) と [`docs/upstream-NOTES.md`](docs/upstream-NOTES.md) にあります。Pi は MIT ライセンスです（[`licenses/mit-earendil-pi.txt`](licenses/mit-earendil-pi.txt)）。

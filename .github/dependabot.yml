@@ -2,7 +2,7 @@
 # https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 version: 2
 updates:
-  - package-ecosystem: "npm" # also covers pnpm (pnpm-lock.yaml, pnpm-workspace.yaml)
+  - package-ecosystem: "bun"
     directory: "/"
     target-branch: "main"
     schedule:
@@ -48,7 +48,7 @@ updates:
       # Update it through vite-plus instead.
       - dependency-name: "vite"
       - dependency-name: "@voidzero-dev/vite-plus-core"
-      # vitest is pinned by Vite+ through the pnpm catalog; it moves with vite-plus.
+      # vitest is pinned by Vite+ through the package.json catalog; it moves with vite-plus.
       - dependency-name: "vitest"
       # pi-ai and pi-schema pin typebox to exactly 1.3.27.
       - dependency-name: "typebox"
