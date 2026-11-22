@@ -1,9 +1,9 @@
 import type { Workspace } from "@cloudflare/computer";
 import { defineTool, type Extension, type ToolExecutionResult } from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
-import { BRANCH_PREFIX, requireAgentBranch } from "../domain/agent-branch";
-import { Refusal } from "../domain/errors";
-import { workspacePath } from "../domain/workspace-path";
+import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch";
+import { Refusal } from "../../../domain/errors";
+import { workspacePath } from "../../../domain/workspace-path";
 
 const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@noreply.d1agents.invalid" };
 

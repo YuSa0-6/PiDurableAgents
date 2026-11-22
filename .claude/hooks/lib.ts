@@ -7,6 +7,7 @@ export const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
 
 export const codePaths = [
   "src/",
+  "lint/",
   "package.json",
   "bun.lock",
   "vite.config.ts",

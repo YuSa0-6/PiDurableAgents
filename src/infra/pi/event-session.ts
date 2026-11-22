@@ -1,5 +1,5 @@
 import type { PiSubmitOptions } from "agents/harness/pi";
-import type { AgentEvent, EventResult } from "./domain/event";
+import type { AgentEvent, EventResult } from "../../domain/event";
 
 type SessionRunner = {
   prompt(input: string, options?: PiSubmitOptions): Promise<EventResult>;
