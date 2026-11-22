@@ -2,7 +2,7 @@ import type { PiAgent } from "./agent";
 import { CloudflareAccountToken } from "./infra/auth/cloudflare-account-token";
 import { DurableAgentGateway } from "./infra/durable/durable-agent-gateway";
 import { randomIds, systemClock } from "./infra/system";
-import { MODEL_ID } from "./model";
+import { MODEL_ID } from "./infra/llm/openrouter";
 import type { AgentGateway } from "./usecase/ports/agent-gateway";
 import type { Authenticator } from "./usecase/ports/authenticator";
 import type { Clock } from "./usecase/ports/clock";

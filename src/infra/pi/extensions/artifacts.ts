@@ -2,10 +2,10 @@ import type { Workspace } from "@cloudflare/computer";
 import type { ArtifactClient } from "@cloudflare/computer/artifacts";
 import { defineTool, type Extension } from "@earendil-works/pi-durable";
 import { obj, opt, str } from "@earendil-works/pi-schema";
-import { BRANCH_PREFIX, requireAgentBranch } from "../domain/agent-branch";
-import { Refusal } from "../domain/errors";
-import { nameFromUrl, repoName } from "../domain/repo-name";
-import { workspacePath } from "../domain/workspace-path";
+import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch";
+import { Refusal } from "../../../domain/errors";
+import { nameFromUrl, repoName } from "../../../domain/repo-name";
+import { workspacePath } from "../../../domain/workspace-path";
 import { currentBranch, fail, guarded, ok, redacting } from "./git";
 
 export type ArtifactsClient = Pick<
