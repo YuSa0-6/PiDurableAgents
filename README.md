@@ -12,7 +12,7 @@ HTTP は **Event Router（Hono）** から入り、MCP のツールも同じユ�
   <img src="docs/architecture/current.png" alt="現状の構成図" width="100%">
 </picture>
 
-現状と、目指す構成（案）の比較は [`docs/architecture/`](docs/architecture/README.md) にあります。
+現状の構成図と、これから足す案の表は [`docs/architecture/`](docs/architecture/README.md) にあります。
 
 ## 全体の流れ
 
@@ -345,4 +345,4 @@ bunx cf deploy --dry-run
 | `agents` バージョン    | `*`（monorepo 内）                         | `^0.33.0`（Pi 1.5 対応）                             |
 | `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`）            |
 
-Pi harness 本体の設計メモは [`docs/upstream-README.md`](docs/upstream-README.md) と [`docs/upstream-NOTES.md`](docs/upstream-NOTES.md) にあります。Pi は MIT ライセンスです（[`licenses/mit-earendil-pi.txt`](licenses/mit-earendil-pi.txt)）。
+Pi は MIT ライセンスです（[`licenses/mit-earendil-pi.txt`](licenses/mit-earendil-pi.txt)）。
