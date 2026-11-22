@@ -27,7 +27,8 @@ export function run(cmd: string[], quiet = false) {
 }
 
 export function git(...args: string[]) {
-  return run(["git", ...args], true).output.trim();
+  const result = run(["git", ...args], true);
+  return result.ok ? result.output.trim() : "";
 }
 
 export function bin(name: string) {

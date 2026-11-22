@@ -8,7 +8,8 @@ const head = git("rev-parse", "HEAD");
 function covers(sha: string) {
   if (sha === head) return true;
   if (!run(["git", "merge-base", "--is-ancestor", sha, "HEAD"], true).ok) return false;
-  return git("diff", "--name-only", sha, "HEAD", "--", ...codePaths) === "";
+  const diff = run(["git", "diff", "--name-only", sha, "HEAD", "--", ...codePaths], true);
+  return diff.ok && diff.output.trim() === "";
 }
 
 const verified =
