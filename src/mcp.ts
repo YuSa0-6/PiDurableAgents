@@ -1,7 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
-import { AgentApi, HttpError } from "./agent-api";
+import { requireBearer } from "./bearer";
+import { compose, type App } from "./compose";
+import { health } from "./usecase/health";
+import { listSessionRepos } from "./usecase/list-session-repos";
+import { sendEvent } from "./usecase/send-event";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -42,18 +46,19 @@ export class AgentMcp {
   static readonly path = "/mcp";
 
   static async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const app = compose(env);
     if (request.method !== "OPTIONS") {
-      const denied = await AgentApi.authorize(request, env.ACCOUNT_ID);
+      const denied = await requireBearer(request, app.auth);
       if (denied) return AgentMcp.#cors(denied);
     }
-    const handler = createMcpHandler(() => AgentMcp.#server(env), {
+    const handler = createMcpHandler(() => AgentMcp.#server(app), {
       route: AgentMcp.path,
       onerror: (error) => console.error("MCP request failed", error),
     });
     return handler(request, env, ctx);
   }
 
-  static #server(env: Env): McpServer {
+  static #server(app: App): McpServer {
     const server = new McpServer({ name: "d1agents", version: "0.0.0" });
     server.registerTool(
       "send_event",
@@ -63,7 +68,7 @@ export class AgentMcp {
           "Send an instruction to the Pi agent. Same validation and dispatch as POST /api/events. The conversation log records source mcp.",
         inputSchema: sendInput,
       },
-      (input) => AgentMcp.#sendEvent(env, input),
+      (input) => AgentMcp.#sendEvent(app, input),
     );
     server.registerTool(
       "session_repos",
@@ -73,7 +78,7 @@ export class AgentMcp {
           "List one session's Artifacts repositories and a one-hour read-only git token for each. Same payload as GET /api/sessions/:id/repos.",
         inputSchema: reposInput,
       },
-      (input) => AgentMcp.#sessionRepos(env, input),
+      (input) => AgentMcp.#sessionRepos(app, input),
     );
     server.registerTool(
       "health",
@@ -83,39 +88,36 @@ export class AgentMcp {
           "Report whether the worker is up and which model it uses. Same payload as GET /api/health.",
         annotations: { readOnlyHint: true },
       },
-      () => AgentMcp.#health(),
+      () => AgentMcp.#health(app),
     );
     return server;
   }
 
-  static async #sendEvent(env: Env, input: SendInput) {
+  static async #sendEvent(app: App, input: SendInput) {
     try {
       return AgentMcp.#ok(
-        await AgentApi.send(env, {
-          text: input.text,
-          session: input.session,
-          id: input.id,
-          wait: input.wait,
-          source: "mcp",
-          type: "message",
-        }),
+        await sendEvent(
+          app,
+          { text: input.text, session: input.session, id: input.id, wait: input.wait },
+          "mcp",
+        ),
       );
     } catch (error) {
       return AgentMcp.#fail(error);
     }
   }
 
-  static async #sessionRepos(env: Env, input: ReposInput) {
+  static async #sessionRepos(app: App, input: ReposInput) {
     try {
-      return AgentMcp.#ok(await AgentApi.repos(env, input.session));
+      return AgentMcp.#ok(await listSessionRepos(app.agents, input.session));
     } catch (error) {
       return AgentMcp.#fail(error);
     }
   }
 
-  static #health() {
+  static #health(app: App) {
     try {
-      return AgentMcp.#ok(AgentApi.health());
+      return AgentMcp.#ok(health(app.model));
     } catch (error) {
       return AgentMcp.#fail(error);
     }
@@ -126,8 +128,7 @@ export class AgentMcp {
   }
 
   static #fail(error: unknown) {
-    const message =
-      error instanceof HttpError || error instanceof Error ? error.message : "Request failed";
+    const message = error instanceof Error ? error.message : "Request failed";
     return {
       isError: true as const,
       content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],

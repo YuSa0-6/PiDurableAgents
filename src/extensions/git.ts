@@ -1,36 +1,11 @@
 import type { Workspace } from "@cloudflare/computer";
 import { defineTool, type Extension, type ToolExecutionResult } from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
+import { BRANCH_PREFIX, requireAgentBranch } from "../domain/agent-branch";
+import { Refusal } from "../domain/errors";
+import { workspacePath } from "../domain/workspace-path";
 
-export const BRANCH_PREFIX = "agent/";
-const BRANCH_PATTERN = /^agent\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@noreply.d1agents.invalid" };
-
-export class Refusal extends Error {}
-
-export function workspacePath(path: string): string {
-  if (!path.startsWith("/")) throw new Refusal(`${path} is not an absolute path.`);
-  const parts: string[] = [];
-  for (const part of path.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") throw new Refusal(`${path} must not contain "..".`);
-    parts.push(part);
-  }
-  if (parts[0] !== "workspace" || parts.length < 2) {
-    throw new Refusal(`${path} is not inside /workspace.`);
-  }
-  return `/${parts.join("/")}`;
-}
-
-export function requireAgentBranch(branch: string): void {
-  const badPart = branch.split("/").some((part) => /^\.+$/.test(part) || part.endsWith(".lock"));
-  if (!BRANCH_PATTERN.test(branch) || badPart) {
-    throw new Refusal(
-      `Branch ${branch} is not allowed. Work on a branch under ${BRANCH_PREFIX}, ` +
-        "created with git_branch; the default branch is never pushed.",
-    );
-  }
-}
 
 export async function currentBranch(workspace: Workspace, dir: string): Promise<string> {
   const branch = await workspace.git.currentBranch({ dir });

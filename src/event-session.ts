@@ -1,5 +1,5 @@
 import type { PiSubmitOptions } from "agents/harness/pi";
-import type { EventResult, RouterEvent } from "./event";
+import type { AgentEvent, EventResult } from "./domain/event";
 
 type SessionRunner = {
   prompt(input: string, options?: PiSubmitOptions): Promise<EventResult>;
@@ -7,7 +7,7 @@ type SessionRunner = {
 };
 
 export class EventSession {
-  static async run(session: SessionRunner, event: RouterEvent, wait = true): Promise<EventResult> {
+  static async run(session: SessionRunner, event: AgentEvent, wait = true): Promise<EventResult> {
     const options: PiSubmitOptions = {
       operationId: event.id,
       entry: { kind: "app.event", data: { source: event.source, type: event.type } },
