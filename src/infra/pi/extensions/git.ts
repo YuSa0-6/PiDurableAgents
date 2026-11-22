@@ -1,5 +1,10 @@
 import type { Workspace } from "@cloudflare/computer";
-import { defineTool, type Extension, type ToolExecutionResult } from "@earendil-works/pi-durable";
+import {
+  defineTool,
+  type Extension,
+  type ToolExecutionResult,
+  type ToolPark,
+} from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
 import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch";
 import { Refusal } from "../../../domain/errors";
@@ -21,9 +26,9 @@ export function fail(text: string): ToolExecutionResult {
   return { output: [{ type: "text", text }], isError: true };
 }
 
-export async function guarded(
-  run: () => Promise<ToolExecutionResult>,
-): Promise<ToolExecutionResult> {
+export async function guarded<T extends ToolExecutionResult | ToolPark>(
+  run: () => Promise<T>,
+): Promise<T | ToolExecutionResult> {
   try {
     return await run();
   } catch (error) {
