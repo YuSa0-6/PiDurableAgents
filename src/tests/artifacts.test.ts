@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { runDurableObjectAlarm } from "cloudflare:test";
 import { describe, expect, it } from "vite-plus/test";
 import { nameFromUrl } from "../domain/repo-name";
 import { artifactsSessionId } from "../infra/pi/extensions/artifacts";
@@ -58,10 +59,11 @@ describe("the artifacts tools", () => {
     expect(await stub.artifactsCalls()).toEqual([]);
   });
 
-  it("import, wait until the import is readable, and revoke every token", async () => {
+  it("import, park until the import is readable, and revoke every token", async () => {
     const stub = object();
-    const result = await stub.runTool("repo_import", { url: "https://github.com/owner/tool.git" });
-    expect(result.isError).toBe(true);
+    const result = await stub.prompt("import https://github.com/owner/tool.git");
+    expect(result.status).toBe("done");
+    expect(result.text).toMatch(/^tool failed: /);
     expect(result.text).not.toContain(FAKE_ARTIFACTS_TOKEN);
     expect(await stub.artifactsCalls()).toEqual([
       "import tool from https://github.com/owner/tool.git",
@@ -71,6 +73,8 @@ describe("the artifacts tools", () => {
       "token read tool t1",
       "revoke tool t1",
     ]);
+    await runDurableObjectAlarm(stub);
+    expect(await stub.scheduledWake()).toBeNull();
   });
 
   it("list the session's repositories", async () => {
