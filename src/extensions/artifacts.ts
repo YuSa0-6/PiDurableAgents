@@ -2,17 +2,11 @@ import type { Workspace } from "@cloudflare/computer";
 import type { ArtifactClient } from "@cloudflare/computer/artifacts";
 import { defineTool, type Extension } from "@earendil-works/pi-durable";
 import { obj, opt, str } from "@earendil-works/pi-schema";
-import {
-  BRANCH_PREFIX,
-  currentBranch,
-  fail,
-  guarded,
-  ok,
-  redacting,
-  Refusal,
-  requireAgentBranch,
-  workspacePath,
-} from "./git";
+import { BRANCH_PREFIX, requireAgentBranch } from "../domain/agent-branch";
+import { Refusal } from "../domain/errors";
+import { nameFromUrl, repoName } from "../domain/repo-name";
+import { workspacePath } from "../domain/workspace-path";
+import { currentBranch, fail, guarded, ok, redacting } from "./git";
 
 export type ArtifactsClient = Pick<
   ArtifactClient,
@@ -21,7 +15,6 @@ export type ArtifactsClient = Pick<
 
 const OPERATION_TOKEN_TTL = 10 * 60;
 const IMPORT_WAIT_MS = 90_000;
-const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
 export type ArtifactsOptions = {
   readonly pollMs?: number;
@@ -29,26 +22,6 @@ export type ArtifactsOptions = {
 
 function gitHeaders(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` };
-}
-
-function repoName(name: string): string {
-  const trimmed = name.trim();
-  if (!REPO_NAME.test(trimmed) || trimmed.includes("__")) {
-    throw new Refusal(
-      `${name} is not a valid repository name: start with a letter or digit, then letters, digits, ".", "_" or "-" (no "__"), up to 63 characters.`,
-    );
-  }
-  return trimmed;
-}
-
-export function nameFromUrl(url: string): string {
-  const last = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "repo";
-  return (
-    last
-      .replace(/\.git$/, "")
-      .replace(/[^A-Za-z0-9._-]/g, "-")
-      .replace(/^[^A-Za-z0-9]+/, "") || "repo"
-  );
 }
 
 export function createArtifactsExtension(

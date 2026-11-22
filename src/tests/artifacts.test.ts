@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vite-plus/test";
-import { artifactsSessionId, nameFromUrl } from "../extensions/artifacts";
+import { nameFromUrl } from "../domain/repo-name";
+import { artifactsSessionId } from "../extensions/artifacts";
 import { FAKE_ARTIFACTS_TOKEN } from "./worker";
 
 function object() {

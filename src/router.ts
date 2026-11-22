@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { AgentApi, HttpError } from "./agent-api";
+import { AgentApi } from "./agent-api";
+import { InvalidInput } from "./domain/errors";
 
 export const app = new Hono<{ Bindings: Env }>();
 
@@ -24,9 +25,8 @@ app.get("/api/sessions/:id/repos", async (c) =>
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 app.onError((error, c) => {
-  if (error instanceof HttpError || error instanceof HTTPException) {
-    return c.json({ error: error.message }, error.status);
-  }
+  if (error instanceof InvalidInput) return c.json({ error: error.message }, 400);
+  if (error instanceof HTTPException) return c.json({ error: error.message }, error.status);
   console.error("Event Router request failed", error);
   return c.json({ error: error.message }, 500);
 });

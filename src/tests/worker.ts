@@ -16,7 +16,7 @@ import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { Extension } from "@earendil-works/pi-durable";
-import type { RouterEvent } from "../event";
+import type { AgentEvent } from "../domain/event";
 import { EventSession } from "../event-session";
 import { createArtifactsExtension, type ArtifactsClient } from "../extensions/artifacts";
 import { createCodemodeExtension } from "../extensions/codemode";
@@ -107,7 +107,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     this.#faux.setResponses(Array.from({ length: 200 }, () => script));
   }
 
-  async handleEvent(event: RouterEvent, wait = true) {
+  async handleEvent(event: AgentEvent, wait = true) {
     return EventSession.run(this.harness.session(), event, wait);
   }
 
