@@ -1,9 +1,4 @@
-import type {
-  Api,
-  AssistantMessageEventStream,
-  Model,
-  Provider
-} from "@earendil-works/pi-ai";
+import type { Api, AssistantMessageEventStream, Model, Provider } from "@earendil-works/pi-ai";
 import { createModels, createProvider } from "@earendil-works/pi-ai/models";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { createAI } from "agents/models/pi-ai";
@@ -18,7 +13,10 @@ export function openRouterModel(): Model<Api> {
   return model;
 }
 
-export function gatewayOpenRouterProvider(ai: ReturnType<typeof createAI>, model: Model<Api>): Provider {
+export function gatewayOpenRouterProvider(
+  ai: ReturnType<typeof createAI>,
+  model: Model<Api>,
+): Provider {
   return createProvider({
     id: "openrouter",
     name: "OpenRouter via AI Gateway",
@@ -28,7 +26,7 @@ export function gatewayOpenRouterProvider(ai: ReturnType<typeof createAI>, model
       stream: (model, context, options) =>
         ai.stream(ai(model), context, options) as AssistantMessageEventStream,
       streamSimple: (model, context, options) =>
-        ai.streamSimple(ai(model), context, options) as AssistantMessageEventStream
-    }
+        ai.streamSimple(ai(model), context, options) as AssistantMessageEventStream,
+    },
   });
 }

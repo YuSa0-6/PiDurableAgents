@@ -19,7 +19,9 @@ describe("the git extension", () => {
   it("branches under agent/ and commits every change", async () => {
     const stub = object();
     await stub.gitRepo(DIR);
-    expect((await stub.runTool("git_branch", { dir: DIR, name: "agent/fix-readme" })).isError).toBe(false);
+    expect((await stub.runTool("git_branch", { dir: DIR, name: "agent/fix-readme" })).isError).toBe(
+      false,
+    );
     await stub.writeWorkspaceFile(`${DIR}/README.md`, "hello, world\n");
     await stub.writeWorkspaceFile(`${DIR}/NEW.md`, "new\n");
     const commit = await stub.runTool("git_commit", { dir: DIR, message: "Fix the README" });
@@ -31,7 +33,9 @@ describe("the git extension", () => {
   it("reports a commit with nothing to commit as an error", async () => {
     const stub = object();
     await stub.gitRepo(DIR);
-    expect(await stub.runTool("git_commit", { dir: DIR, message: "empty" })).toMatchObject({ isError: true });
+    expect(await stub.runTool("git_commit", { dir: DIR, message: "empty" })).toMatchObject({
+      isError: true,
+    });
   });
 
   it("refuses branches outside agent/", async () => {

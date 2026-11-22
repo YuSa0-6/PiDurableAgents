@@ -11,7 +11,7 @@ describe("code mode", () => {
     await stub.writeWorkspaceFile("/workspace/a.txt", "alpha");
     await stub.writeWorkspaceFile("/workspace/b.txt", "beta");
     const result = await stub.prompt(
-      'codemode const [a, b] = await Promise.all(["/workspace/a.txt", "/workspace/b.txt"].map((path) => tools.read({ path }))); console.log(JSON.stringify([a, b]));'
+      'codemode const [a, b] = await Promise.all(["/workspace/a.txt", "/workspace/b.txt"].map((path) => tools.read({ path }))); console.log(JSON.stringify([a, b]));',
     );
     expect(result.status).toBe("done");
     expect(result.text).toMatch(/^tool said: /);
@@ -23,7 +23,7 @@ describe("code mode", () => {
     const stub = object();
     await stub.gitRepo("/workspace/demo");
     const result = await stub.prompt(
-      'codemode const r = await tools.repo_push({ name: "demo", dir: "/workspace/demo" }); console.log(JSON.stringify(r));'
+      'codemode const r = await tools.repo_push({ name: "demo", dir: "/workspace/demo" }); console.log(JSON.stringify(r));',
     );
     expect(result.status).toBe("done");
     expect(result.text).toContain("Branch main is not allowed");

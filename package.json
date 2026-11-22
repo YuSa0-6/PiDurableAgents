@@ -1,17 +1,23 @@
 {
   "name": "d1agents-pi-durable",
-  "description": "Pi Durable agent on Cloudflare Workers + Durable Objects, driven over HTTP and remote MCP",
-  "private": true,
-  "type": "module",
   "version": "0.0.0",
+  "private": true,
+  "description": "Pi Durable agent on Cloudflare Workers + Durable Objects, driven over HTTP and remote MCP",
+  "workspaces": {
+    "catalog": {
+      "vite": "npm:@voidzero-dev/vite-plus-core@1.6.0",
+      "vitest": "5.1.0",
+      "vite-plus": "1.6.0"
+    }
+  },
+  "type": "module",
   "scripts": {
     "start": "cf dev",
     "build": "cf build",
     "deploy": "cf deploy",
     "typecheck": "cf workers types && tsc --noEmit",
     "types": "cf workers types",
-    "test": "pnpm test:workers",
-    "test:workers": "vp test run --config src/tests/vitest.config.ts",
+    "test": "vp test run --config src/tests/vitest.config.ts",
     "check": "vp check"
   },
   "dependencies": {
@@ -32,11 +38,17 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.v.16",
     "@cloudflare/vitest-plugin": "^1.8.1",
+    "@types/node": "^26.6.6",
     "cf": "1.0.0-beta.31",
     "typescript": "^7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
     "wrangler": "^4.161.0"
-  }
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.6.0",
+    "vitest": "5.1.0"
+  },
+  "packageManager": "bun@1.4.4"
 }

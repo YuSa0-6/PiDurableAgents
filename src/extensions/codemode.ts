@@ -6,7 +6,7 @@ export function createCodemodeExtension(): Extension {
   const sandbox = createInlineCodemodeSandbox({
     interruptBudget: 30_000,
     memoryLimitBytes: 32 * 1024 * 1024,
-    timeoutMs: 5 * 60 * 1000
+    timeoutMs: 5 * 60 * 1000,
   });
   return createPiCodemodeExtension({ sandbox, models: false });
 }

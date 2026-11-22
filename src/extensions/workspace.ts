@@ -2,7 +2,7 @@ import type { Workspace } from "@cloudflare/computer";
 import {
   createPiTools,
   type CreatePiToolsOptions,
-  type PiTool
+  type PiTool,
 } from "@cloudflare/computer/tools/pi-ai";
 import type { Extension, ToolRegistration } from "@earendil-works/pi-durable";
 
@@ -12,14 +12,14 @@ const PREAMBLE = [
   "Two tools run code, for different jobs:",
   "- exec runs a JavaScript module inside the workspace, with node:fs and git. Use it to compute over files.",
   "- codemode runs a script that calls your other tools as tools.<name>(args). Use it to do many tool calls in one step, such as reading or searching many files, or a fixed sequence of tool calls.",
-  "Use tools whenever they can answer the request, and explain their results plainly."
+  "Use tools whenever they can answer the request, and explain their results plainly.",
 ].join("\n");
 
 export function createWorkspaceExtension(workspace: Workspace): Extension {
   return {
     name: "workspace",
     sections: [{ key: "preamble", render: () => PREAMBLE, tag: false }],
-    tools: createWorkspaceTools(workspace)
+    tools: createWorkspaceTools(workspace),
   };
 }
 
@@ -92,16 +92,16 @@ function describeExec(tool: PiTool): PiTool {
         input: {
           description: "Input object handed to the module.",
           type: "object",
-          additionalProperties: true
-        }
-      }
-    }
+          additionalProperties: true,
+        },
+      },
+    },
   };
 }
 
 function createWorkspaceTools(
   workspace: Workspace,
-  options: Omit<CreatePiToolsOptions, "workspace" | "shell"> = {}
+  options: Omit<CreatePiToolsOptions, "workspace" | "shell"> = {},
 ): ToolRegistration[] {
   const { tools, execute } = createPiTools({
     ...options,
@@ -110,10 +110,10 @@ function createWorkspaceTools(
       defaultBackend: JAVASCRIPT_BACKEND,
       backends: {
         [JAVASCRIPT_BACKEND]: {
-          description: "Runs ES module source in a sandboxed isolate."
-        }
-      }
-    }
+          description: "Runs ES module source in a sandboxed isolate.",
+        },
+      },
+    },
   });
 
   return tools.map((declared): ToolRegistration => {
@@ -122,17 +122,15 @@ function createWorkspaceTools(
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      ...(tool.constrainedSampling
-        ? { constrainedSampling: tool.constrainedSampling }
-        : {}),
+      ...(tool.constrainedSampling ? { constrainedSampling: tool.constrainedSampling } : {}),
       replay: REPLAY_SAFE.has(tool.name) ? "safe" : "unsafe",
       async execute(args, api, context) {
         const { content, isError } = await execute(
           { id: api.callId, name: tool.name, arguments: args },
-          { abortSignal: context.abortSignal }
+          { abortSignal: context.abortSignal },
         );
         return { output: content, isError };
-      }
+      },
     };
   });
 }
