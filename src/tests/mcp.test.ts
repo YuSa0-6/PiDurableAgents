@@ -1,29 +1,13 @@
 import { env } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import worker from "../index";
+import { accountId, activeToken, stubAccountTokenVerify } from "./account-token";
 
-const token = "s3cret";
-const accountId = "test-account";
+const token = activeToken;
 type WorkerRequest = Parameters<typeof worker.fetch>[0];
 
-// Stand in for Cloudflare's /accounts/:id/tokens/verify: only `token` is active.
-const realFetch = globalThis.fetch;
-beforeEach(() => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const request = new Request(input, init);
-    const verify = `https://api.cloudflare.com/client/v4/accounts/${accountId}/tokens/verify`;
-    if (request.url !== verify) return realFetch(input, init);
-    const active = request.headers.get("authorization") === `Bearer ${token}`;
-    return Response.json(
-      { success: active, result: active ? { status: "active" } : null },
-      { status: active ? 200 : 401 },
-    );
-  });
-});
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+stubAccountTokenVerify();
 
 function bound(): Env {
   return {
@@ -180,12 +164,8 @@ describe("MCP", () => {
   it("rejects empty and oversized instructions with the router rules", async () => {
     const headers = { authorization: `Bearer ${token}` };
     const empty = toolText(
-      (
-        await post(
-          rpc("tools/call", { name: "send_event", arguments: { text: "   " } }),
-          headers,
-        )
-      ).payload,
+      (await post(rpc("tools/call", { name: "send_event", arguments: { text: "   " } }), headers))
+        .payload,
     );
     expect(empty.isError).toBe(true);
     expect(JSON.parse(empty.text)).toEqual({ error: "text (non-empty string) is required" });
