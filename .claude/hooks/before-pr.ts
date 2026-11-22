@@ -22,9 +22,9 @@ const verified =
 if (verified) process.exit(0);
 
 const reason = [
-  "PR を作る前に pstack の検証(実アプリを動かして確かめる)を済ませてください。",
-  "1. このリポジトリの verify スキルがあれば使い、なければ `bun run start`(cf dev)で起動して、変えた機能を HTTP / MCP で実際に呼んで確かめます。",
-  "2. 実行したコマンドと結果(レスポンスやログ)を `.verify/" + head + ".md` に書きます。",
+  "PR を作る前に実アプリで確かめてください(pstack の verify)。",
+  "1. `.claude/skills/verify-pi-durable/SKILL.md` の手順で `cf dev` を起動し、変えた機能を HTTP / MCP で呼びます。",
+  "2. `scripts/record.sh` で `.verify/" + head + ".md` に記録します。",
   "3. もう一度 PR を作ります。",
 ].join("\n");
 
