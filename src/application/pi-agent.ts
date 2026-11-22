@@ -8,14 +8,15 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
-import type { AgentEvent, EventResult } from "./domain/event";
-import type { SharedRepo } from "./domain/shared-repo";
-import { EventSession } from "./event-session";
-import { gatewayOpenRouterProvider, openRouterModel } from "./model";
-import { artifactsSessionId, createArtifactsExtension } from "./extensions/artifacts";
-import { createCodemodeExtension } from "./extensions/codemode";
-import { createGitExtension } from "./extensions/git";
-import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "./extensions/workspace";
+import type { AgentEvent, EventResult } from "../domain/event";
+import type { SharedRepo } from "../domain/shared-repo";
+import { EventSession } from "../infra/pi/event-session";
+import { shareRepos } from "../infra/pi/share-repos";
+import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
+import { artifactsSessionId, createArtifactsExtension } from "../infra/pi/extensions/artifacts";
+import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
+import { createGitExtension } from "../infra/pi/extensions/git";
+import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export class PiAgent extends DurableObject<Env> {
   readonly ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
@@ -70,21 +71,6 @@ export class PiAgent extends DurableObject<Env> {
   }
 
   async shareRepos(): Promise<SharedRepo[]> {
-    const artifacts = this.workspace.artifacts;
-    const repos = await artifacts.list();
-    return Promise.all(
-      repos.map(async (repo) => {
-        const { remote } = await artifacts.get(repo.name);
-        const token = await artifacts.createToken(repo.name, "read", 60 * 60);
-        return {
-          name: repo.name,
-          remote,
-          defaultBranch: repo.defaultBranch,
-          lastPushAt: repo.lastPushAt,
-          readToken: token.plaintext,
-          expiresAt: token.expiresAt,
-        };
-      }),
-    );
+    return shareRepos(this.workspace.artifacts);
   }
 }

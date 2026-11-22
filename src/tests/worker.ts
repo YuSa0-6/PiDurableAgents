@@ -17,11 +17,11 @@ import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { Extension } from "@earendil-works/pi-durable";
 import type { AgentEvent } from "../domain/event";
-import { EventSession } from "../event-session";
-import { createArtifactsExtension, type ArtifactsClient } from "../extensions/artifacts";
-import { createCodemodeExtension } from "../extensions/codemode";
-import { createGitExtension } from "../extensions/git";
-import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../extensions/workspace";
+import { EventSession } from "../infra/pi/event-session";
+import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
+import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
+import { createGitExtension } from "../infra/pi/extensions/git";
+import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export const FAKE_ARTIFACTS_TOKEN = "art_v1_fake";
 

@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { requireBearer } from "./bearer";
-import { compose, type App } from "./compose";
-import { InvalidInput } from "./domain/errors";
-import type { EventInput } from "./domain/event";
-import { health } from "./usecase/health";
-import { listSessionRepos } from "./usecase/list-session-repos";
-import { sendEvent } from "./usecase/send-event";
+import { requireBearer } from "../bearer";
+import { compose, type App } from "../compose";
+import { InvalidInput } from "../../domain/errors";
+import type { EventInput } from "../../domain/event";
+import { health } from "../../usecase/health";
+import { listSessionRepos } from "../../usecase/list-session-repos";
+import { sendEvent } from "../../usecase/send-event";
 
 export const app = new Hono<{ Bindings: Env; Variables: { app: App } }>();
 

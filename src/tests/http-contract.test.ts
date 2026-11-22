@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vite-plus/test";
-import worker from "../index";
+import worker from "../application/worker";
 import { accountId, activeToken, disabledToken, stubAccountTokenVerify } from "./account-token";
 
 type WorkerRequest = Parameters<typeof worker.fetch>[0];

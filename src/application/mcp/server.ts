@@ -1,11 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
-import { requireBearer } from "./bearer";
-import { compose, type App } from "./compose";
-import { health } from "./usecase/health";
-import { listSessionRepos } from "./usecase/list-session-repos";
-import { sendEvent } from "./usecase/send-event";
+import { requireBearer } from "../bearer";
+import { compose, type App } from "../compose";
+import { health } from "../../usecase/health";
+import { listSessionRepos } from "../../usecase/list-session-repos";
+import { sendEvent } from "../../usecase/send-event";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
