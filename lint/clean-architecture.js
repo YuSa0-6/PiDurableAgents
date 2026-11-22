@@ -7,7 +7,7 @@ const ALLOWED = {
   application: ["domain", "usecase", "infra", "application"],
 };
 
-const DIRECTIVE = /^\s*(@ts-|oxlint-|eslint-|@vitest-)/;
+const DIRECTIVE = /^\s*(@ts-|oxlint-)/;
 
 function posix(file) {
   return file.split(path.sep).join("/");
