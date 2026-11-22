@@ -8,7 +8,8 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
-import type { RouterEvent } from "./event";
+import type { EventResult, RouterEvent } from "./event";
+import { EventSession } from "./event-session";
 import { gatewayOpenRouterProvider, openRouterModel } from "./model";
 import { artifactsSessionId, createArtifactsExtension } from "./extensions/artifacts";
 import { createCodemodeExtension } from "./extensions/codemode";
@@ -23,7 +24,7 @@ export class PiAgent extends DurableObject<Env> {
     git: createGitClient(),
     artifacts: {
       binding: this.env.ARTIFACTS,
-      sessionId: artifactsSessionId(this.ctx.id.name ?? this.ctx.id.toString())
+      sessionId: artifactsSessionId(this.ctx.id.name ?? this.ctx.id.toString()),
     },
     backends: [
       new CodemodeBackend({
@@ -31,9 +32,9 @@ export class PiAgent extends DurableObject<Env> {
         loader: this.env.LOADER,
         root: "/workspace",
         access: "read-write",
-        modules: { "codemode:git": createGitModule({ allowNetwork: true }) }
-      })
-    ]
+        modules: { "codemode:git": createGitModule({ allowNetwork: true }) },
+      }),
+    ],
   });
   readonly registry = createRegistry();
   readonly harness = new PiHarness({
@@ -51,30 +52,20 @@ export class PiAgent extends DurableObject<Env> {
           registry: this.registry,
           onWake,
           settings: {
-            retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 }
+            retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
           },
-          onReport: (report) => console.warn("pi report", report)
+          onReport: (report) => console.warn("pi report", report),
         },
-        context
+        context,
       );
     },
-    defaults: { model: this.model, thinkingLevel: "low" }
+    defaults: { model: this.model, thinkingLevel: "low" },
   });
 
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
   async handleEvent(event: RouterEvent, wait = true): Promise<EventResult> {
-    const session = this.harness.session();
-    const options = {
-      operationId: event.id,
-      entry: { kind: "app.event", data: { source: event.source, type: event.type } }
-    };
-    if (!wait) {
-      const receipt = await session.submit(event.text, options);
-      return { status: "queued", operationId: receipt.operationId };
-    }
-    const { status, text, reason, operationId } = await session.prompt(event.text, options);
-    return { status, operationId, text, reason };
+    return EventSession.run(this.harness.session(), event, wait);
   }
 
   async shareRepos(): Promise<SharedRepo[]> {
@@ -90,19 +81,14 @@ export class PiAgent extends DurableObject<Env> {
           defaultBranch: repo.defaultBranch,
           lastPushAt: repo.lastPushAt,
           readToken: token.plaintext,
-          expiresAt: token.expiresAt
+          expiresAt: token.expiresAt,
         };
-      })
+      }),
     );
   }
 }
 
-export type EventResult = {
-  readonly status: "done" | "unanswered" | "queued";
-  readonly operationId: string;
-  readonly text?: string;
-  readonly reason?: string;
-};
+export type { EventResult } from "./event";
 
 export type SharedRepo = {
   readonly name: string;
