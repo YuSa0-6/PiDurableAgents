@@ -220,6 +220,16 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | 生成物（ビルド結果、型）                          | `.cloudflare/`（git には入れない）                               |
 | テスト用の Worker の設定                          | `src/tests/wrangler.jsonc`（`@cloudflare/vitest-plugin` が読む） |
 
+どのソースからも import していないのに `package.json` に残している依存は、`.fallowrc.json` の `ignoreDependencies` に並べています。理由は次のとおりです。
+
+| 依存                           | 残す理由                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `@earendil-works/pi-telemetry` | `vite.config.ts` と `src/tests/vitest.config.ts` で dedupe するため。ハーネスとアプリが pi のモジュール状態を 1 つだけ共有する |
+| `typebox`                      | pi-ai と pi-schema が 1.3.27 ちょうどを必要とする                                                                              |
+| `@earendil-works/chord`        | agents の Pi ハーネスの peer dependency(pi-durable が実行時に使う)                                                             |
+| `@platformatic/vfs`、`zod`     | `@cloudflare/computer` の peer dependency                                                                                      |
+| `cf`、`wrangler`               | CLI として使う(`bunx cf`、`bunx wrangler`)。Wrangler は `cf` にない secrets と tail のためだけ                                 |
+
 `cf` に関係なく調べものをするときは `bunx cf cli search "<やりたいこと>"` が使えます。
 
 ### Claude Code のプラグイン
