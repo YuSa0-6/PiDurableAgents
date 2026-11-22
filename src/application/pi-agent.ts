@@ -10,12 +10,15 @@ import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
 import type { AgentEvent, EventResult } from "../domain/event";
 import type { SharedRepo } from "../domain/shared-repo";
+import type { Sandbox } from "./sandbox";
 import { EventSession } from "../infra/pi/event-session";
 import { shareRepos } from "../infra/pi/share-repos";
 import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
 import { artifactsSessionId, createArtifactsExtension } from "../infra/pi/extensions/artifacts";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
+import { createTestsExtension } from "../infra/pi/extensions/tests";
+import { containerRunner } from "../infra/pi/container-runner";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export class PiAgent extends DurableObject<Env> {
@@ -45,6 +48,18 @@ export class PiAgent extends DurableObject<Env> {
       this.registry.install(createGitExtension(this.workspace));
       this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
       this.registry.install(createCodemodeExtension());
+      this.registry.install(
+        createTestsExtension(
+          this.workspace,
+          containerRunner(
+            () =>
+              (this.env.SANDBOX as unknown as DurableObjectNamespace<Sandbox>).getByName(
+                this.ctx.id.toString(),
+              ),
+            this.workspace,
+          ),
+        ),
+      );
       const models = createModels();
       models.setProvider(gatewayOpenRouterProvider(this.ai, this.model));
       return Harness.open(

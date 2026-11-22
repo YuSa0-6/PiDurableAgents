@@ -2,6 +2,7 @@ import { AgentMcp } from "./mcp/server";
 import { app } from "./http/router";
 
 export { PiAgent } from "./pi-agent";
+export { Sandbox } from "./sandbox";
 
 export default {
   fetch: (request, env, ctx) =>
