@@ -30,10 +30,6 @@ export default defineConfig({
         worker: "d1agents-pi-durable",
         exportName: "PiAgent",
       }),
-      SANDBOX: bindings.durableObject({
-        worker: "d1agents-pi-durable",
-        exportName: "Sandbox",
-      }),
       AI: bindings.ai({
         dev: {
           remote: true,

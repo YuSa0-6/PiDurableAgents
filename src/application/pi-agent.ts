@@ -53,7 +53,7 @@ export class PiAgent extends DurableObject<Env> {
           this.workspace,
           containerRunner(
             () =>
-              (this.env.SANDBOX as unknown as DurableObjectNamespace<Sandbox>).getByName(
+              (this.ctx.exports.Sandbox as unknown as DurableObjectNamespace<Sandbox>).getByName(
                 this.ctx.id.toString(),
               ),
             this.workspace,
