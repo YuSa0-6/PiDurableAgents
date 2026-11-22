@@ -48,6 +48,12 @@ function script(context: TranscriptContext): AssistantMessage {
       stopReason: "toolUse",
     });
   }
+  const imported = /^import (\S+)$/.exec(prompt);
+  if (imported) {
+    return fauxAssistantMessage([fauxToolCall("repo_import", { url: imported[1] })], {
+      stopReason: "toolUse",
+    });
+  }
   const read = /^read (\S+)$/.exec(prompt);
   if (read) {
     return fauxAssistantMessage([fauxToolCall("read", { path: read[1] })], {
@@ -177,6 +183,10 @@ export class PiHarnessTestObject extends DurableObject<Env> {
 
   commands(): { argv: string[]; cwd: string }[] {
     return [...this.#commands];
+  }
+
+  async scheduledWake(): Promise<number | null> {
+    return this.ctx.storage.getAlarm();
   }
 
   artifactsCalls(): string[] {
