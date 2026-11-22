@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
-import { AgentApi, HttpError } from "./agent-api";
+import { AgentApi } from "./agent-api";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -126,8 +126,7 @@ export class AgentMcp {
   }
 
   static #fail(error: unknown) {
-    const message =
-      error instanceof HttpError || error instanceof Error ? error.message : "Request failed";
+    const message = error instanceof Error ? error.message : "Request failed";
     return {
       isError: true as const,
       content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],

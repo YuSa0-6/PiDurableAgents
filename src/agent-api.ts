@@ -1,30 +1,17 @@
-import type { PiAgent, SharedRepo } from "./agent";
-import type { EventResult, RouterEvent } from "./event";
+import type { PiAgent } from "./agent";
+import { InvalidInput } from "./domain/errors";
+import {
+  parseEvent,
+  waitsForAnswer,
+  type AgentEvent,
+  type EventInput,
+  type EventResult,
+} from "./domain/event";
+import { isSessionId, type SessionId } from "./domain/session-id";
+import type { SharedRepo } from "./domain/shared-repo";
 import { MODEL_ID } from "./model";
 
-export type EventInput = {
-  readonly text?: unknown;
-  readonly session?: unknown;
-  readonly source?: unknown;
-  readonly type?: unknown;
-  readonly id?: unknown;
-  readonly wait?: unknown;
-};
-
-export class HttpError extends Error {
-  readonly status: 400 | 403;
-
-  constructor(status: 400 | 403, message: string) {
-    super(message);
-    this.name = "HttpError";
-    this.status = status;
-  }
-}
-
 export class AgentApi {
-  static readonly sessionPattern = /^[A-Za-z0-9_-]{1,64}$/;
-  static readonly maxText = 8000;
-
   static readonly unauthorized =
     "Send an active Account API token as Authorization: Bearer <token>";
 
@@ -45,17 +32,21 @@ export class AgentApi {
     env: Env,
     body: EventInput,
     source = "http",
-  ): Promise<{ event: RouterEvent; result: EventResult }> {
-    const event = AgentApi.#eventFrom(body, source);
+  ): Promise<{ event: AgentEvent; result: EventResult }> {
+    const event = parseEvent(body, {
+      id: crypto.randomUUID(),
+      source,
+      receivedAt: new Date().toISOString(),
+    });
     const result = await AgentApi.#agent(env, event.session).handleEvent(
       event,
-      body.wait !== false,
+      waitsForAnswer(body),
     );
     return { event, result };
   }
 
   static async repos(env: Env, session: string): Promise<{ repos: SharedRepo[] }> {
-    if (!AgentApi.sessionPattern.test(session)) throw new HttpError(400, "invalid session id");
+    if (!isSessionId(session)) throw new InvalidInput("invalid session id");
     return { repos: await AgentApi.#agent(env, session).shareRepos() };
   }
 
@@ -65,7 +56,7 @@ export class AgentApi {
       if (typeof body !== "object" || body === null) throw new Error();
       return body as EventInput;
     } catch {
-      throw new HttpError(400, "body must be a JSON object");
+      throw new InvalidInput("body must be a JSON object");
     }
   }
 
@@ -79,32 +70,7 @@ export class AgentApi {
     return body.result?.status === "active";
   }
 
-  static #eventFrom(body: EventInput, source: string): RouterEvent {
-    const session = AgentApi.#textOr(body.session, "default");
-    if (!AgentApi.sessionPattern.test(session)) {
-      throw new HttpError(400, "session must match [A-Za-z0-9_-]{1,64}");
-    }
-    if (typeof body.text !== "string" || body.text.trim().length === 0) {
-      throw new HttpError(400, "text (non-empty string) is required");
-    }
-    if (body.text.length > AgentApi.maxText) {
-      throw new HttpError(400, `text must be at most ${AgentApi.maxText} characters`);
-    }
-    return {
-      id: AgentApi.#textOr(body.id, crypto.randomUUID()),
-      source: AgentApi.#textOr(body.source, source),
-      type: AgentApi.#textOr(body.type, "message"),
-      text: body.text,
-      session,
-      receivedAt: new Date().toISOString(),
-    };
-  }
-
-  static #textOr(value: unknown, fallback: string): string {
-    return typeof value === "string" && value.length > 0 ? value : fallback;
-  }
-
-  static #agent(env: Env, session: string): DurableObjectStub<PiAgent> {
+  static #agent(env: Env, session: SessionId): DurableObjectStub<PiAgent> {
     return (env.PiAgent as unknown as DurableObjectNamespace<PiAgent>).getByName(session);
   }
 }

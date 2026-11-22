@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vite-plus/test";
-import { workspacePath } from "../extensions/git";
+import { workspacePath } from "../domain/workspace-path";
 
 const DIR = "/workspace/demo";
 

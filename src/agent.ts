@@ -8,7 +8,8 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
-import type { EventResult, RouterEvent } from "./event";
+import type { AgentEvent, EventResult } from "./domain/event";
+import type { SharedRepo } from "./domain/shared-repo";
 import { EventSession } from "./event-session";
 import { gatewayOpenRouterProvider, openRouterModel } from "./model";
 import { artifactsSessionId, createArtifactsExtension } from "./extensions/artifacts";
@@ -64,7 +65,7 @@ export class PiAgent extends DurableObject<Env> {
 
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
-  async handleEvent(event: RouterEvent, wait = true): Promise<EventResult> {
+  async handleEvent(event: AgentEvent, wait = true): Promise<EventResult> {
     return EventSession.run(this.harness.session(), event, wait);
   }
 
@@ -87,14 +88,3 @@ export class PiAgent extends DurableObject<Env> {
     );
   }
 }
-
-export type { EventResult } from "./event";
-
-export type SharedRepo = {
-  readonly name: string;
-  readonly remote: string;
-  readonly defaultBranch: string;
-  readonly lastPushAt: string | null;
-  readonly readToken: string;
-  readonly expiresAt: string;
-};
