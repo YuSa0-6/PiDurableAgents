@@ -4,7 +4,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: ["docs/architecture/*.html", "docs/upstream-*.md"],
+    ignorePatterns: ["docs/architecture/*.html"],
   },
   lint: {
     options: {
