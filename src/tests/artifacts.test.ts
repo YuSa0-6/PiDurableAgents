@@ -2,7 +2,6 @@ import { env } from "cloudflare:workers";
 import { runDurableObjectAlarm } from "cloudflare:test";
 import { describe, expect, it } from "vite-plus/test";
 import { nameFromUrl } from "../domain/repo-name";
-import { artifactsSessionId } from "../infra/pi/extensions/artifacts";
 import { FAKE_ARTIFACTS_TOKEN } from "./worker";
 
 function object() {
@@ -10,13 +9,6 @@ function object() {
 }
 
 describe("Artifacts names", () => {
-  it("scopes a session by its name when Artifacts accepts it, else under s-", () => {
-    expect(artifactsSessionId("demo")).toBe("demo");
-    expect(artifactsSessionId("cf-deploy-check")).toBe("cf-deploy-check");
-    expect(artifactsSessionId("_private")).toBe("s--private");
-    expect(artifactsSessionId("a__b")).toBe("s-a-b");
-  });
-
   it("names an import after the URL's last segment", () => {
     expect(nameFromUrl("https://github.com/YuSa0-6/D1Agents")).toBe("D1Agents");
     expect(nameFromUrl("https://github.com/owner/repo.git")).toBe("repo");

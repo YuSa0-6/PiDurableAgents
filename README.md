@@ -310,6 +310,17 @@ bun run start
 
 ## デプロイ
 
+`main` にマージすると、Cloudflare Workers Builds が自動でビルドしてデプロイします。
+
+| 項目               | 設定                            |
+| ------------------ | ------------------------------- |
+| 対象ブランチ       | `main`                          |
+| ルートディレクトリ | `/`                             |
+| ビルドコマンド     | `bun install --frozen-lockfile` |
+| デプロイコマンド   | `bun run deploy`                |
+
+手元からデプロイするときは、次のコマンドを使います。
+
 ```bash
 bun run deploy
 ```
