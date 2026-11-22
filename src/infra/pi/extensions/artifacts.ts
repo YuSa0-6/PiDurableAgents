@@ -1,6 +1,6 @@
 import type { Workspace } from "@cloudflare/computer";
 import type { ArtifactClient } from "@cloudflare/computer/artifacts";
-import { defineTool, type Extension } from "@earendil-works/pi-durable";
+import { defineTool, type Extension, type ToolExecutionResult } from "@earendil-works/pi-durable";
 import { obj, opt, str } from "@earendil-works/pi-schema";
 import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch";
 import { Refusal } from "../../../domain/errors";
@@ -35,7 +35,7 @@ export function createArtifactsExtension(
   const withToken = async (
     name: string,
     scope: "read" | "write",
-    work: (token: string, remote: string) => Promise<ReturnType<typeof ok>>,
+    work: (token: string, remote: string) => Promise<ToolExecutionResult>,
   ) => {
     const { remote } = await artifacts.get(name);
     const token = await artifacts.createToken(name, scope, OPERATION_TOKEN_TTL);
@@ -209,11 +209,6 @@ export function createArtifactsExtension(
   };
 }
 
-function textOf(result: ReturnType<typeof ok>): string {
+function textOf(result: ToolExecutionResult): string {
   return (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");
-}
-
-export function artifactsSessionId(session: string): string {
-  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(session) && !session.includes("__")) return session;
-  return `s-${session.replace(/_+/g, "-").replace(/[^A-Za-z0-9._-]/g, "-")}`;
 }
