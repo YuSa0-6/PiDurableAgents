@@ -2,23 +2,22 @@
 
 ## Sub-features
 
-- トークンなしは 401
-- 正しいアカウント API トークンで 200 と、使っているモデル
+- verify モードの localhost は、トークンなしで 200 と使っているモデル
+- 本番と同じトークンの確認(401 と 200)は `src/tests/http-contract.test.ts` が workerd 上で確かめる
 
 ## How to get to it (user POV)
 
-`/api/*` を `Authorization: Bearer <アカウント API トークン>` 付きで呼ぶ。
+本番では `/api/*` を `Authorization: Bearer <アカウント API トークン>` 付きで呼ぶ。verify モードの localhost ではヘッダーなしで呼べる。
 
 ## Driving it with curl
 
 ```sh
 S=.claude/skills/verify-pi-durable/scripts
-curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:$(cat .verify/run/port)/api/health"
 sh $S/call.sh GET /api/health
 ```
 
-合格:1 行目が `401`、2 行目が `status: 200` で、JSON にモデル名がある。
+合格:`status: 200` で、JSON にモデル名がある。
 
 ## Gotchas
 
-- 認証は Cloudflare API への問い合わせなので、ネットワークがない環境では 200 にならない
+- `bun run start`(モードなし)で起動したときは、トークンなしは 401 になる

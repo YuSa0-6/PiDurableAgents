@@ -12,7 +12,7 @@ export const app = new Hono<{ Bindings: Env; Variables: { app: App } }>();
 
 app.use("/api/*", async (c, next) => {
   const deps = compose(c.env);
-  const denied = await requireBearer(c.req.raw, deps.auth);
+  const denied = await requireBearer(c.req.raw, deps);
   if (denied) return denied;
   c.set("app", deps);
   return next();

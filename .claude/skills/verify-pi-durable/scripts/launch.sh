@@ -9,7 +9,7 @@ if [ -f "$run/pid" ] && kill -0 "$(cat "$run/pid")" 2>/dev/null; then
 fi
 : > "$run/calls.log"
 cd "$root"
-nohup bun run start > "$run/dev.log" 2>&1 &
+nohup bun run start -- --mode verify > "$run/dev.log" 2>&1 &
 echo $! > "$run/pid"
 i=0
 while [ $i -lt 120 ]; do

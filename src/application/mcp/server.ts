@@ -48,7 +48,7 @@ export class AgentMcp {
   static async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const app = compose(env);
     if (request.method !== "OPTIONS") {
-      const denied = await requireBearer(request, app.auth);
+      const denied = await requireBearer(request, app);
       if (denied) return AgentMcp.#cors(denied);
     }
     const handler = createMcpHandler(() => AgentMcp.#server(app), {

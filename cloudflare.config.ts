@@ -1,7 +1,7 @@
 import { bindings, defineConfig, exports } from "cf/config";
 import * as entrypoint from "./src/application/worker.ts" with { type: "cf-worker" };
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   worker: {
     name: "d1agents-pi-durable",
     compatibilityDate: "2026-11-05",
@@ -32,6 +32,7 @@ export default defineConfig({
           remote: true,
         },
       }),
+      ...(mode === "verify" ? { SKIP_AUTH_ON_LOCALHOST: bindings.text("1") } : {}),
     },
   },
-});
+}));

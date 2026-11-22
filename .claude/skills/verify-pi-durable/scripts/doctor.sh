@@ -11,20 +11,16 @@ else
 fi
 port="$(cat "$run/port" 2>/dev/null || true)"
 if [ -n "$port" ]; then
-  anon="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$port/api/health" || true)"
-  echo "unauthenticated /api/health: $anon (want 401)"
-  [ "$anon" = "401" ] || ok=1
+  health="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$port/api/health" || true)"
+  echo "/api/health without a token: $health (want 200 in verify mode)"
+  [ "$health" = "200" ] || ok=1
 else
   echo "port: unknown"
   ok=1
 fi
-if [ -z "${CLOUDFLARE_ACCOUNT_TOKEN:-}" ]; then
-  echo "CLOUDFLARE_ACCOUNT_TOKEN: missing"
-  ok=1
-elif [ -n "$port" ]; then
-  authed="$(curl -s -o /dev/null -w '%{http_code}' -H "authorization: Bearer $CLOUDFLARE_ACCOUNT_TOKEN" "http://localhost:$port/api/health" || true)"
-  echo "authenticated /api/health: $authed (want 200)"
-  [ "$authed" = "200" ] || ok=1
-fi
+for name in CLOUDFLARE_ACCESS_CLIENT_ID CLOUDFLARE_ACCESS_CLIENT_SECRET; do
+  eval "value=\${$name:-}"
+  [ -n "$value" ] || { echo "$name: missing (remote AI and Artifacts will be blocked by Access)"; ok=1; }
+done
 echo "commit: $(git -C "$root" rev-parse HEAD)"
 exit $ok

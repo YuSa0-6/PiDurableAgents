@@ -11,15 +11,20 @@ const auth = { authorization: `Bearer ${activeToken}` };
 
 stubAccountTokenVerify();
 
-function bound(): Env {
-  return { ACCOUNT_ID: accountId, PiAgent: env.PI_HARNESS_TEST } as unknown as Env;
+function bound(extra: Record<string, string> = {}): Env {
+  return { ACCOUNT_ID: accountId, PiAgent: env.PI_HARNESS_TEST, ...extra } as unknown as Env;
 }
 
-async function call(path: string, init: RequestInit = {}) {
+async function call(
+  path: string,
+  init: RequestInit = {},
+  origin = "https://agent.d1agents.test",
+  extra: Record<string, string> = {},
+) {
   const ctx = createExecutionContext();
   const response = await worker.fetch(
-    new Request(`https://agent.d1agents.test${path}`, init) as WorkerRequest,
-    bound(),
+    new Request(`${origin}${path}`, init) as WorkerRequest,
+    bound(extra),
     ctx,
   );
   const text = await response.text();
@@ -71,6 +76,36 @@ describe("HTTP contract: authentication", () => {
 
     const preflight = await call("/mcp", { method: "OPTIONS" });
     expect(preflight.status).not.toBe(401);
+  });
+});
+
+describe("HTTP contract: local dev without a token", () => {
+  const skip = { SKIP_AUTH_ON_LOCALHOST: "1" };
+
+  it.each(["http://localhost:5173", "http://127.0.0.1:5173", "http://[::1]:5173"])(
+    "lets %s through when SKIP_AUTH_ON_LOCALHOST is 1",
+    async (origin) => {
+      expect((await call("/api/health", {}, origin, skip)).status).toBe(200);
+      expect((await call("/mcp", { method: "POST", body: "{}" }, origin, skip)).status).not.toBe(
+        401,
+      );
+    },
+  );
+
+  it("keeps a public host behind the token even when SKIP_AUTH_ON_LOCALHOST is 1", async () => {
+    expect((await call("/api/health", {}, undefined, skip)).status).toBe(401);
+    expect((await call("/mcp", { method: "POST", body: "{}" }, undefined, skip)).status).toBe(401);
+    expect((await call("/api/health", {}, "https://localhost.d1agents.test", skip)).status).toBe(
+      401,
+    );
+  });
+
+  it.each<Record<string, string>>([
+    {},
+    { SKIP_AUTH_ON_LOCALHOST: "true" },
+    { SKIP_AUTH_ON_LOCALHOST: "0" },
+  ])("keeps localhost behind the token unless the flag is exactly 1 (%o)", async (extra) => {
+    expect((await call("/api/health", {}, "http://localhost:5173", extra)).status).toBe(401);
   });
 });
 

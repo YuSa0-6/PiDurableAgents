@@ -2,9 +2,9 @@
 
 ## Sub-features
 
-- `tools/list` に `send_event` と `session_repos`
+- `tools/list` に `send_event`、`session_repos`、`health`
 - `tools/call` が HTTP と同じ処理に届く(会話ログの `source` が `mcp`)
-- トークンなしは 401、OPTIONS は通る
+- OPTIONS は通る(本番のトークンなし 401 はテストが確かめる)
 
 ## How to get to it (user POV)
 
@@ -20,7 +20,7 @@ sh $S/call.sh MCP tools/call '{"name":"send_event","arguments":{"session":"verif
 curl -s -o /dev/null -w '%{http_code}\n' -X OPTIONS "http://localhost:$(cat .verify/run/port)/mcp"
 ```
 
-合格:`tools/list` に 2 つのツール名、`tools/call` の結果に `hello`、OPTIONS は 2xx。
+合格:`tools/list` に 3 つのツール名、`tools/call` の結果に `hello`、OPTIONS は 2xx。
 
 ## Gotchas
 
