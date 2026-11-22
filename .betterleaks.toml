@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "lockfiles hold package names such as @inquirer/password, not secrets"
+paths = ['''(^|/)bun\.lock$''', '''(^|/)pnpm-lock\.yaml$''']

@@ -18,7 +18,12 @@
     "typecheck": "cf workers types && vp check --no-fmt --no-lint",
     "types": "cf workers types",
     "test": "vp test run --config src/tests/vitest.config.ts",
-    "check": "vp check"
+    "check": "vp check",
+    "prepare": "vp hooks enable",
+    "verify:secrets": "sh scripts/verify/secrets.sh all",
+    "verify:workflows": "sh scripts/verify/workflows.sh",
+    "verify:dead-code": "fallow audit --base origin/main",
+    "mutation": "stryker run"
   },
   "dependencies": {
     "@cloudflare/computer": "^0.11.2",
@@ -38,8 +43,11 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.v.16",
     "@cloudflare/vitest-plugin": "^1.8.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/node": "^26.6.6",
     "cf": "1.0.0-beta.31",
+    "fallow": "^3.45.0",
     "vite": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",

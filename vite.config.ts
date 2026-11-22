@@ -51,6 +51,9 @@ export default defineConfig({
     ],
   },
   plugins: [agents(), cloudflare({ inspectorPort: 9242 })],
+  staged: {
+    "*": "vp check --fix --no-error-on-unmatched-pattern",
+  },
   resolve: {
     dedupe: [
       "@earendil-works/chord",

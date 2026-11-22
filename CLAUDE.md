@@ -31,3 +31,10 @@
 | デプロイ                       | `bun run deploy`(本番に出るので確認してから)      |
 
 `cf` は Bun 上では `cloudflare.config.ts` を読めません。`bun run` と `bunx` は Node.js で動かすので、そのまま使えます。`bun --bun` は使いません。
+
+## マージ前の検証
+
+git フック(`.vite-hooks/`)、Claude Code のフック(`.claude/settings.json`)、CI(`.github/workflows/`)が自動で動きます。置き場所の一覧は README の「マージ前の検証」にあります。
+
+- 作業を終えるとき、コードを変えていれば Stop フックが `vp check` とテストを流す。失敗したら直してから終える
+- PR を作る前に実アプリで確かめ、実行したコマンドと結果を `.verify/<HEAD の SHA>.md` に書く。ないと PR 作成のフックが止める

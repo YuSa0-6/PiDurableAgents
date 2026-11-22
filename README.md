@@ -232,6 +232,39 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 
 `cf` に関係なく調べものをするときは `bunx cf cli search "<やりたいこと>"` が使えます。
 
+### マージ前の検証
+
+検証は速さで置き場所を分けています。git フックと Claude Code のフックは手元で早く気づくためのもので、飛ばせない最終判定は CI が担います。
+
+| 検証                                 | pre-commit                     | pre-push                   | Claude Code のフック                          | CI（`.github/workflows/`）                   |
+| ------------------------------------ | ------------------------------ | -------------------------- | --------------------------------------------- | -------------------------------------------- |
+| 整形・リント・型（`vp check`）       | ステージしたファイルを自動修正 |                            | 編集したファイルを自動修正（PostToolUse）     | 全体                                         |
+| 秘密情報（betterleaks）              | ステージした差分               | まだプッシュしていない差分 |                                               | 全履歴                                       |
+| GitHub Actions の安全性（zizmor）    | `.github/` を変えたときだけ    |                            |                                               | 全体                                         |
+| 未使用コード（fallow）               |                                | main との差分              |                                               | ベースとの差分                               |
+| テスト（`vp test`）                  |                                | 全体                       | 作業を終えるとき（Stop、変更があるときだけ）  | 全体                                         |
+| ミューテーションテスト（Stryker）    |                                |                            |                                               | PR で変えた `src/` のファイル、週 1 回は全体 |
+| 実アプリでの確認（pstack の verify） |                                |                            | PR を作る前に確認の記録を求める（PreToolUse） |                                              |
+
+| 置き場所             | 中身                                                             | 有効にする方法                                         |
+| -------------------- | ---------------------------------------------------------------- | ------------------------------------------------------ |
+| git フック           | `.vite-hooks/pre-commit`、`.vite-hooks/pre-push`                 | `bun install`（`prepare` が `vp hooks enable` を実行） |
+| Claude Code のフック | `.claude/settings.json` の `hooks` と `.claude/hooks/*.ts`       | Claude Code でこのリポジトリを開く                     |
+| CI                   | `.github/workflows/verify.yml`、`.github/workflows/mutation.yml` | PR と main への push で自動                            |
+| 共通スクリプト       | `scripts/verify/secrets.sh`、`scripts/verify/workflows.sh`       | フックと CI の両方が呼ぶ                               |
+
+betterleaks と zizmor は npm にないので別に入れます（`brew install betterleaks zizmor`）。入っていないときは手元の検査を飛ばして案内を出し、CI で必ず実行します。
+
+| やりたいこと                      | コマンド                                     |
+| --------------------------------- | -------------------------------------------- |
+| 秘密情報を全履歴で調べる          | `bun run verify:secrets`                     |
+| GitHub Actions を調べる           | `bun run verify:workflows`                   |
+| main との差分の未使用コードを見る | `bun run verify:dead-code`                   |
+| ミューテーションテスト            | `bun run mutation -- --mutate src/router.ts` |
+| フックを一度だけ飛ばす            | `VP_GIT_HOOKS=0 git commit ...`              |
+
+PR を作る前のフックは、実アプリで確かめた記録 `.verify/<コミットの SHA>.md` を探します（git には入れません）。記録のあとに `src/` や設定を変えていなければ、そのまま PR を作れます。
+
 ### Claude Code のプラグイン
 
 このリポジトリを Claude Code で開くと、`.claude/settings.json` に書いた次の 2 つのプラグインが入ります（初回はマーケットプレイスを信頼するか聞かれます）。

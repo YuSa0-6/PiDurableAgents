@@ -1,0 +1,5 @@
+vp staged
+sh scripts/verify/secrets.sh staged
+if git diff --cached --name-only | grep -q '^\.github/'; then
+  sh scripts/verify/workflows.sh
+fi

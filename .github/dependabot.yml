@@ -12,7 +12,7 @@ updates:
       timezone: "Asia/Tokyo"
     # Wait a few days after a release before proposing it.
     cooldown:
-      default-days: 3
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -61,6 +61,8 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
     commit-message:
