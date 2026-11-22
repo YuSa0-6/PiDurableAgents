@@ -1,7 +1,7 @@
 # D1Agents: Pi Durable Agent on Cloudflare
 
 Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objects で動かすエージェントです。ブラウザ UI はなく、HTTP API とリモート MCP（Streamable HTTP の `/mcp`）で使います。
-HTTP は **Event Router（Hono）** から入り、MCP のツールは同じ受付（`AgentApi`）を通ります。どちらも **Pi Durable Agent** が答えます。モデルは OpenRouter の GLM 5.3 に固定し、Cloudflare AI Gateway 経由で呼びます。
+HTTP は **Event Router（Hono）** から入り、MCP のツールも同じユースケース（`src/usecase/`）を通ります。どちらも **Pi Durable Agent** が答えます。モデルは OpenRouter の GLM 5.3 に固定し、Cloudflare AI Gateway 経由で呼びます。
 
 - デプロイ先: https://d1agents-pi-durable.itumens.workers.dev
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
