@@ -7,5 +7,4 @@ dist
 .cloudflare/
 reports/
 .stryker-tmp/
-.verify/
 .claude/.verify-cache
