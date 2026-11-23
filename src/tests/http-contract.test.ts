@@ -95,9 +95,14 @@ describe("HTTP contract: local dev without a token", () => {
   it("keeps a public host behind the token even when SKIP_AUTH_ON_LOCALHOST is 1", async () => {
     expect((await call("/api/health", {}, undefined, skip)).status).toBe(401);
     expect((await call("/mcp", { method: "POST", body: "{}" }, undefined, skip)).status).toBe(401);
-    expect((await call("/api/health", {}, "https://localhost.d1agents.test", skip)).status).toBe(
-      401,
-    );
+    for (const origin of [
+      "https://localhost.d1agents.test",
+      "http://localhost.:5173",
+      "http://127.0.0.2:5173",
+      "http://0.0.0.0:5173",
+    ]) {
+      expect((await call("/api/health", {}, origin, skip)).status).toBe(401);
+    }
   });
 
   it.each<Record<string, string>>([
