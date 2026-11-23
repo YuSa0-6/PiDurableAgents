@@ -355,7 +355,7 @@ bunx cf deploy --dry-run
 
 ### 本番での動作確認(smoke)
 
-デプロイのあと、GitHub Actions の `smoke` ワークフローを手で流すと、本番の Worker で `run_tests` がコンテナを使えるかを確かめます(`scripts/smoke/run-tests.sh`)。
+デプロイのあと、GitHub Actions の `smoke` ワークフローを手で流すと、本番の Worker で `run_tests` がコンテナを使えるかを確かめます(`scripts/smoke/run-tests.ts`)。
 
 | 項目         | 中身                                                                                                                                 |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
