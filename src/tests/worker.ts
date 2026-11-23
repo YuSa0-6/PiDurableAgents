@@ -15,7 +15,7 @@ import { CodemodeBackend } from "@cloudflare/computer/backends/codemode";
 import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
-import type { Extension } from "@earendil-works/pi-durable";
+import type { EntryId, Extension } from "@earendil-works/pi-durable";
 import { RUN_BUDGET, type BudgetLimits } from "../domain/budget";
 import type { AgentEvent } from "../domain/event";
 import { piLogSource, readLog } from "../infra/pi/read-log";
@@ -28,6 +28,15 @@ import { createGitExtension } from "../infra/pi/extensions/git";
 import { createTestsExtension, type CommandResult } from "../infra/pi/extensions/tests";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
+export type TranscriptMessage =
+  | { readonly role: "assistant"; readonly stopReason: string; readonly tokens: number }
+  | { readonly role: string };
+
+export type TranscriptEntry = {
+  readonly kind: string;
+  readonly messages: readonly TranscriptMessage[];
+};
+
 export const FAKE_ARTIFACTS_TOKEN = "art_v1_fake";
 
 function textOf(content: Message["content"] | undefined): string {
@@ -38,7 +47,24 @@ function textOf(content: Message["content"] | undefined): string {
     .join("");
 }
 
+function planned(context: TranscriptContext): AssistantMessage | undefined {
+  const start = context.messages.map((m) => m.role).lastIndexOf("user");
+  const plan = /^plan (\d+) (answer|error)$/.exec(textOf(context.messages[start]?.content));
+  if (!plan) return undefined;
+  const done = context.messages.slice(start).filter((m) => m.role === "toolResult").length;
+  if (done < Number(plan[1])) {
+    return fauxAssistantMessage([fauxToolCall("read", { path: "/workspace/note.txt" })], {
+      stopReason: "toolUse",
+    });
+  }
+  return plan[2] === "answer"
+    ? fauxAssistantMessage([fauxText(`planned answer after ${done} rounds`)])
+    : fauxAssistantMessage([], { stopReason: "error", errorMessage: "planned model error" });
+}
+
 function script(context: TranscriptContext): AssistantMessage {
+  const scripted = planned(context);
+  if (scripted) return scripted;
   const last = context.messages.filter((m) => m.role !== "system").at(-1);
   if (last?.role === "toolResult") {
     return fauxAssistantMessage([
@@ -198,6 +224,40 @@ export class PiHarnessTestObject extends DurableObject<Env> {
         ? [entry.data.reason]
         : [],
     );
+  }
+
+  async transcript(): Promise<TranscriptEntry[]> {
+    const session = this.harness.session();
+    const entries: TranscriptEntry[] = [];
+    let next = 1 as EntryId;
+    for (;;) {
+      const page = await session.entries({ minEntryId: next, order: "ascending" }, 100);
+      for (const entry of page.items) {
+        entries.push({
+          kind: entry.kind,
+          messages: (entry.model ?? []).map((message) =>
+            message.role === "assistant"
+              ? {
+                  role: "assistant",
+                  stopReason: message.stopReason,
+                  tokens: message.usage.totalTokens,
+                }
+              : { role: message.role },
+          ),
+        });
+      }
+      const last = page.items.at(-1);
+      if (last === undefined) return entries;
+      next = (last.id + 1) as EntryId;
+    }
+  }
+
+  async submit(text: string): Promise<void> {
+    await this.harness.session().submit(text);
+  }
+
+  async busy(): Promise<boolean> {
+    return this.harness.session().busy();
   }
 
   setBudget(limits: Partial<BudgetLimits>): void {
