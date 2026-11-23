@@ -9,12 +9,13 @@ description: Drive the D1Agents Pi Durable Worker the way a user does (cf dev in
 
 ## 前提
 
-`launch.ts` は `cf dev --mode verify` で起動します。verify モードでは `cloudflare.config.ts` が `SKIP_AUTH_ON_LOCALHOST=1` を足し、localhost から来た呼び出しだけトークンなしで通します。本番のデプロイ(モードなし)にはこの値が入らず、localhost 以外のホストは verify モードでもトークンが要ります(`src/tests/http-contract.test.ts` が確かめます)。トークンの確認そのものはテストが受け持ちます。
+`launch.ts` は `cf dev --mode verify` で起動します。Docker が動いていないときは `--mode verify-without-containers` にして、Sandbox コンテナを外して起動します(このときコマンド実行の機能は確かめられません)。verify モードでは `cloudflare.config.ts` が `SKIP_AUTH_ON_LOCALHOST=1` を足し、localhost から来た呼び出しだけトークンなしで通します。本番のデプロイ(モードなし)にはこの値が入らず、localhost 以外のホストは verify モードでもトークンが要ります(`src/tests/http-contract.test.ts` が確かめます)。トークンの確認そのものはテストが受け持ちます。
 
 | 必要なもの                | 確かめ方                                                                      | ないとき                                                                                                                                                                                                    |
 | ------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Cloudflare の認証         | `cf dev` が起動する                                                           | `CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` を入れるか `bunx cf auth login`。AI と Artifacts は `dev.remote: true` なので、ローカルだけでは動かない                                                   |
 | Access のサービストークン | `CLOUDFLARE_ACCESS_CLIENT_ID` と `CLOUDFLARE_ACCESS_CLIENT_SECRET` が空でない | `*.workers.dev` が Cloudflare Access の後ろにあるので、AI と Artifacts のリモート接続に要る。ないと `send_event` は `model_error`、repos は 500 になる。対話できる端末なら `cloudflared` のログインでもよい |
+| Docker(任意)              | `docker info` が通る                                                          | なくても起動できるが、Sandbox コンテナを使う機能は確かめられない。初回はイメージのビルドに数分かかる                                                                                                        |
 | 依存                      | `node_modules` がある                                                         | `bun install`                                                                                                                                                                                               |
 
 プロキシが `api.cloudflare.com` に認証を差し込むクラウド環境では、`CLOUDFLARE_API_TOKEN` はダミーの値で起動できます。Access のサービストークンは workerd とリモートの間で使われるので、本物の値が要ります。足りない手順は「未検証」と記録に書き、検証できる環境で走らせます。テストやモックの結果で代わりにしません。

@@ -9,8 +9,10 @@ const sandbox = defineContainer({
   ssh: { enabled: false },
 });
 
-export default defineConfig(({ mode }) => ({
-  containers: [sandbox],
+const verifyModes = new Set(["verify", "verify-without-containers"]);
+
+export default defineConfig(({ mode = "" }) => ({
+  containers: mode === "verify-without-containers" ? [] : [sandbox],
   worker: {
     name: "d1agents-pi-durable",
     compatibilityDate: "2026-11-05",
@@ -21,7 +23,10 @@ export default defineConfig(({ mode }) => ({
     },
     exports: {
       PiAgent: exports.durableObject({ storage: "sqlite" }),
-      Sandbox: exports.durableObject({ storage: "sqlite", container: sandbox }),
+      Sandbox:
+        mode === "verify-without-containers"
+          ? exports.durableObject({ storage: "sqlite" })
+          : exports.durableObject({ storage: "sqlite", container: sandbox }),
     },
     env: {
       ACCOUNT_ID: bindings.text("7beca1669580a2216d1e5b0bc3c346f8"),
@@ -42,7 +47,7 @@ export default defineConfig(({ mode }) => ({
           remote: true,
         },
       }),
-      ...(mode === "verify" ? { SKIP_AUTH_ON_LOCALHOST: bindings.text("1") } : {}),
+      ...(verifyModes.has(mode) ? { SKIP_AUTH_ON_LOCALHOST: bindings.text("1") } : {}),
     },
   },
 }));

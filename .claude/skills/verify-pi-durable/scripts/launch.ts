@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { openSync, writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { finish } from "../../../../scripts/lib";
+import { finish, has, run } from "../../../../scripts/lib";
 import { ensureRunDir, files, readText, root, runningPid, status } from "./run-dir";
 
 ensureRunDir();
@@ -11,9 +11,12 @@ if (already) {
   finish(true);
 }
 
+const dockerReady = has("docker") && run(["docker", "info"], { quiet: true }).ok;
+const mode = dockerReady ? "verify" : "verify-without-containers";
+if (mode !== "verify") console.log("docker is not running: starting without the Sandbox container");
 writeFileSync(files.calls, "");
 const log = openSync(files.devLog, "w");
-const child = spawn("bun", ["run", "start", "--", "--mode", "verify"], {
+const child = spawn("bun", ["run", "start", "--", "--mode", mode], {
   cwd: root,
   detached: true,
   stdio: ["ignore", log, log],
@@ -21,7 +24,7 @@ const child = spawn("bun", ["run", "start", "--", "--mode", "verify"], {
 child.unref();
 writeFileSync(files.pid, String(child.pid));
 
-for (let second = 0; second < 120; second++) {
+for (let second = 0; second < 900; second++) {
   const port = /localhost:(\d+)/.exec(readText(files.devLog))?.[1];
   if (port && (await status(`http://localhost:${port}/api/health`)) === 200) {
     writeFileSync(files.port, port);
@@ -35,5 +38,5 @@ for (let second = 0; second < 120; second++) {
   }
   await sleep(1000);
 }
-process.stderr.write(`cf dev did not answer within 120s. see ${files.devLog}\n`);
+process.stderr.write(`cf dev did not answer within 900s. see ${files.devLog}\n`);
 finish(false);
