@@ -352,6 +352,17 @@ bun run deploy
 bunx cf deploy --dry-run
 ```
 
+### 本番での動作確認(smoke)
+
+デプロイのあと、GitHub Actions の `smoke` ワークフローを手で流すと、本番の Worker で `run_tests` がコンテナを使えるかを確かめます(`scripts/smoke/run-tests.sh`)。
+
+| 項目         | 中身                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 流し方       | Actions の `smoke` から **Run workflow**                                                                                             |
+| すること     | 毎回新しいセッションで、`node --test` のテストを 1 つ作らせ、`run_tests` で実行させる                                                |
+| 合格の条件   | 返事に `run test passed with exit code 0` が入っている                                                                               |
+| シークレット | `CLOUDFLARE_ACCOUNT_TOKEN`(必須)。Worker の前に Cloudflare Access があるときは `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` も |
+
 ログを流して見る機能（`wrangler tail`）は `cf` にまだないので、`bunx wrangler tail d1agents-pi-durable` を使います。
 
 ## 元のサンプルからの変更点

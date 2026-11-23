@@ -1,0 +1,28 @@
+name: smoke
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+jobs:
+  run-tests-in-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: run_tests on the deployed Worker
+        env:
+          CLOUDFLARE_ACCOUNT_TOKEN: ${{ secrets.CLOUDFLARE_ACCOUNT_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          SMOKE_SESSION: smoke-${{ github.run_id }}-${{ github.run_attempt }}
+        run: sh scripts/smoke/run-tests.sh
