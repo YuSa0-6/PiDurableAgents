@@ -1,6 +1,10 @@
 import path from "node:path";
+import { definePlugin, defineRule } from "vite-plus/lint/plugins";
+import type { Node } from "vite-plus/lint/plugins";
 
-const ALLOWED = {
+type Layer = "domain" | "usecase" | "infra" | "application";
+
+const ALLOWED: Record<Layer, readonly Layer[]> = {
   domain: ["domain"],
   usecase: ["domain", "usecase"],
   infra: ["domain", "usecase", "infra"],
@@ -9,20 +13,21 @@ const ALLOWED = {
 
 const DIRECTIVE = /^\s*(@ts-|oxlint-)/;
 
-function posix(file) {
+function posix(file: string) {
   return file.split(path.sep).join("/");
 }
 
-function layerOf(file) {
-  return posix(file).match(/\/src\/(domain|usecase|infra|application)\//)?.[1] ?? null;
+function layerOf(file: string): Layer | null {
+  const found = posix(file).match(/\/src\/(domain|usecase|infra|application)\//)?.[1];
+  return (found as Layer | undefined) ?? null;
 }
 
-const dependencyRule = {
+const dependencyRule = defineRule({
   meta: { type: "problem" },
   create(context) {
     const from = layerOf(context.filename);
     if (!from) return {};
-    const check = (node, source) => {
+    const check = (node: Node, source: unknown) => {
       if (typeof source !== "string" || !source.startsWith(".")) return;
       const target = layerOf(`${path.resolve(path.dirname(context.filename), source)}/`);
       if (target && !ALLOWED[from].includes(target)) {
@@ -34,14 +39,18 @@ const dependencyRule = {
     };
     return {
       ImportDeclaration: (node) => check(node, node.source.value),
-      ExportNamedDeclaration: (node) => node.source && check(node, node.source.value),
+      ExportNamedDeclaration: (node) => {
+        if (node.source) check(node, node.source.value);
+      },
       ExportAllDeclaration: (node) => check(node, node.source.value),
-      ImportExpression: (node) => node.source.type === "Literal" && check(node, node.source.value),
+      ImportExpression: (node) => {
+        if (node.source.type === "Literal") check(node, node.source.value);
+      },
     };
   },
-};
+});
 
-const portsAreTypes = {
+const portsAreTypes = defineRule({
   meta: { type: "problem" },
   create(context) {
     if (!posix(context.filename).includes("/src/usecase/ports/")) return {};
@@ -54,9 +63,9 @@ const portsAreTypes = {
       },
     };
   },
-};
+});
 
-const noComments = {
+const noComments = defineRule({
   meta: { type: "suggestion" },
   create(context) {
     return {
@@ -71,13 +80,13 @@ const noComments = {
       },
     };
   },
-};
+});
 
-export default {
+export default definePlugin({
   meta: { name: "clean-architecture" },
   rules: {
     "dependency-rule": dependencyRule,
     "ports-are-types": portsAreTypes,
     "no-comments": noComments,
   },
-};
+});

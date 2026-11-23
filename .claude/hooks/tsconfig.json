@@ -1,12 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "types": ["node"],
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true
-  },
-  "include": ["*.ts"]
+  "extends": "../../tsconfig.tools.json",
+  "include": ["**/*.ts"]
 }

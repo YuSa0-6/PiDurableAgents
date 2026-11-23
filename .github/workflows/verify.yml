@@ -65,9 +65,12 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
       - run: go install github.com/betterleaks/betterleaks@v1.10.1
       - name: betterleaks
-        run: sh scripts/verify/secrets.sh all
+        run: bun scripts/verify/secrets.ts all
 
   workflows:
     runs-on: ubuntu-latest
@@ -80,5 +83,8 @@ jobs:
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
       - name: zizmor
-        run: sh scripts/verify/workflows.sh --format=github
+        run: bun scripts/verify/workflows.ts --format=github

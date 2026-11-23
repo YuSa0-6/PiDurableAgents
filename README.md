@@ -221,15 +221,16 @@ GitHub App で push と PR を作る仕組みは、Artifacts に切り替えた�
 
 ## ツールチェーン
 
-| 道具                                                | 用途                                                                | コマンド                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `cf` CLI（beta）                                    | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作 | `bun run start` / `bun run build` / `bun run deploy` / `bun run types` |
-| Vite（Vite+ と Cloudflare Vite プラグイン beta）    | `cf` が中で使うビルド                                               | `vite.config.ts`                                                       |
-| Hono                                                | Event Router                                                        | `src/application/http/router.ts`                                       |
-| Wrangler                                            | ログを流して見る（`cf` が未対応のため）と、テスト用の設定           | `bunx wrangler tail d1agents-pi-durable`                               |
-| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト                                                  | `bun run test`                                                         |
-| Bun                                                 | パッケージ管理とスクリプト実行（`cf` 自体は Node.js で動く）        | `bun install` / `bun run <name>`                                       |
-| Vite+（`vp check`）                                 | 整形（Oxfmt）、リント（Oxlint）、型チェック（tsrs）                 | `bun run check`                                                        |
+| 道具                                                | 用途                                                                                          | コマンド                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `cf` CLI（beta）                                    | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作                           | `bun run start` / `bun run build` / `bun run deploy` / `bun run types` |
+| Vite（Vite+ と Cloudflare Vite プラグイン beta）    | `cf` が中で使うビルド                                                                         | `vite.config.ts`                                                       |
+| Hono                                                | Event Router                                                                                  | `src/application/http/router.ts`                                       |
+| Wrangler                                            | ログを流して見る（`cf` が未対応のため）と、テスト用の設定                                     | `bunx wrangler tail d1agents-pi-durable`                               |
+| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト                                                                            | `bun run test`                                                         |
+| Bun                                                 | パッケージ管理とスクリプト実行（`cf` 自体は Node.js で動く）                                  | `bun install` / `bun run <name>`                                       |
+| Vite+（`vp check`）                                 | 整形（Oxfmt）、リント（Oxlint と自作ルール `lint/clean-architecture.ts`）、型チェック（tsrs） | `bun run check`                                                        |
+| TypeScript のスクリプト                             | git フック・CI・Claude Code のフックから呼ぶ手順（シェルは使わない）                          | `bun scripts/<名前>.ts`                                                |
 
 Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wrangler.jsonc` から `cf migrate` で移行しました。バインディングと実行環境の型は `cf` が `.cloudflare/types/` に生成します（`bun run typecheck` が先に生成します）。
 
@@ -271,7 +272,7 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | git フック           | `.vite-hooks/pre-commit`、`.vite-hooks/pre-push`                 | `bun install`（`prepare` が `vp hooks enable` を実行） |
 | Claude Code のフック | `.claude/settings.json` の `hooks` と `.claude/hooks/*.ts`       | Claude Code でこのリポジトリを開く                     |
 | CI                   | `.github/workflows/verify.yml`、`.github/workflows/mutation.yml` | PR と main への push で自動                            |
-| 共通スクリプト       | `scripts/verify/secrets.sh`、`scripts/verify/workflows.sh`       | フックと CI の両方が呼ぶ                               |
+| 共通スクリプト       | `scripts/verify/*.ts`、`scripts/hooks/*.ts`(TypeScript)          | git フックと CI が `bun scripts/...` で呼ぶ            |
 
 betterleaks と zizmor は npm にないので別に入れます（`brew install betterleaks zizmor`）。入っていないときは手元の検査を飛ばして案内を出し、CI で必ず実行します。
 

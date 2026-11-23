@@ -1,25 +1,31 @@
 import { describe, expect, it } from "vite-plus/test";
-import plugin from "./clean-architecture.js";
+import plugin from "./clean-architecture";
 
-function reports(ruleName, filename, visit) {
-  const found = [];
+type Handlers = {
+  ImportDeclaration?: (node: { source: { value: string } }) => void;
+  Program?: () => void;
+};
+type Visit = ((handlers: Handlers) => void) & { comments?: { value: string; loc: object }[] };
+type RuleName = "dependency-rule" | "ports-are-types" | "no-comments";
+
+function reports(ruleName: RuleName, filename: string, visit: Visit) {
+  const found: string[] = [];
   const context = {
     filename,
-    report: (problem) => found.push(problem.message),
+    report: (problem: { message: string }) => found.push(problem.message),
     sourceCode: { getAllComments: () => visit.comments ?? [] },
   };
-  const handlers = plugin.rules[ruleName].create(context);
-  visit(handlers);
+  const rule = plugin.rules[ruleName] as unknown as { create: (c: typeof context) => Handlers };
+  visit(rule.create(context));
   return found;
 }
 
-function importing(source) {
-  const visit = (handlers) => handlers.ImportDeclaration?.({ source: { value: source } });
-  return visit;
+function importing(source: string): Visit {
+  return (handlers) => handlers.ImportDeclaration?.({ source: { value: source } });
 }
 
-function commented(...values) {
-  const visit = (handlers) => handlers.Program?.();
+function commented(...values: string[]): Visit {
+  const visit: Visit = (handlers) => handlers.Program?.();
   visit.comments = values.map((value) => ({ value, loc: {} }));
   return visit;
 }

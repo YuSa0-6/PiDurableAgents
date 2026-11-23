@@ -22,7 +22,7 @@ export default defineConfig({
     name: "d1agents",
     include: [
       path.join(testsDir, "..", "**/*.test.ts"),
-      path.join(testsDir, "../../lint/*.test.js"),
+      path.join(testsDir, "../../lint/*.test.ts"),
     ],
     testTimeout: 30_000,
     hookTimeout: 30_000,

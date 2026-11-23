@@ -1,3 +1,1 @@
-sh scripts/verify/secrets.sh push
-fallow audit --base "$(git rev-parse --verify --quiet origin/main || echo HEAD~1)" --quiet
-vp test run --config src/tests/vitest.config.ts
+bun scripts/hooks/pre-push.ts

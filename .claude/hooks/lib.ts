@@ -1,45 +1,21 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { git, root } from "../../scripts/lib";
 
-export const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+export { bin, git, root, run } from "../../scripts/lib";
 
 export const codePaths = [
   "src/",
   "lint/",
+  "scripts/",
   "package.json",
   "bun.lock",
   "vite.config.ts",
   "cloudflare.config.ts",
   "tsconfig.json",
+  "tsconfig.tools.json",
 ];
-
-export function run(cmd: string[], quiet = false) {
-  const [command = "", ...args] = cmd;
-  const proc = spawnSync(command, args, {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  const output = `${proc.stdout ?? ""}${proc.stderr ?? ""}`;
-  if (!quiet && proc.status !== 0) process.stderr.write(tail(output, 80));
-  return { ok: proc.status === 0, output };
-}
-
-export function git(...args: string[]) {
-  const result = run(["git", ...args], true);
-  return result.ok ? result.output.trim() : "";
-}
-
-export function bin(name: string) {
-  const local = path.join(root, "node_modules", ".bin", name);
-  return existsSync(local) ? local : name;
-}
-
-export function tail(text: string, lines: number) {
-  return `${text.trimEnd().split("\n").slice(-lines).join("\n")}\n`;
-}
 
 export function isCode(file: string) {
   return codePaths.some((p) => (p.endsWith("/") ? file.startsWith(p) : file === p));
