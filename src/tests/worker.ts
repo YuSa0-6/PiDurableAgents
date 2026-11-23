@@ -21,6 +21,7 @@ import { EventSession } from "../infra/pi/event-session";
 import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
+import { createTestsExtension, type CommandResult } from "../infra/pi/extensions/tests";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export const FAKE_ARTIFACTS_TOKEN = "art_v1_fake";
@@ -81,11 +82,22 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   });
   readonly registry = createRegistry();
   readonly #artifactsCalls: string[] = [];
+  readonly #commands: { argv: string[]; cwd: string }[] = [];
+  #commandResult: CommandResult = { exitCode: 0, stdout: "", stderr: "" };
+  #clock = 0;
   readonly #extensions: Extension[] = [
     createWorkspaceExtension(this.workspace),
     createGitExtension(this.workspace),
     createArtifactsExtension(this.workspace, this.#fakeArtifacts(), { pollMs: 1 }),
     createCodemodeExtension(),
+    createTestsExtension(
+      this.workspace,
+      async (argv, cwd) => {
+        this.#commands.push({ argv, cwd });
+        return this.#commandResult;
+      },
+      () => (this.#clock += 1500),
+    ),
   ];
   readonly harness = new PiHarness({
     harness: async ({ storage, context, onWake }) => {
@@ -163,6 +175,14 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     const result = await tool.execute(args as never, {} as never, {} as never);
     const text = (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");
     return { text, isError: result.isError === true };
+  }
+
+  setCommandResult(result: CommandResult): void {
+    this.#commandResult = result;
+  }
+
+  commands(): { argv: string[]; cwd: string }[] {
+    return [...this.#commands];
   }
 
   async scheduledWake(): Promise<number | null> {
@@ -267,7 +287,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   }
 
   async writeWorkspaceFile(path: string, text: string): Promise<void> {
-    await this.workspace.fs.mkdir("/workspace", { recursive: true });
+    await this.workspace.fs.mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true });
     await this.workspace.fs.writeFile(path, text);
   }
 }

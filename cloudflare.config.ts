@@ -1,7 +1,16 @@
-import { bindings, defineConfig, exports } from "cf/config";
+import { bindings, defineConfig, defineContainer, exports } from "cf/config";
 import * as entrypoint from "./src/application/worker.ts" with { type: "cf-worker" };
 
+const sandbox = defineContainer({
+  name: "d1agents-sandbox",
+  image: { dockerfile: "./sandbox/Dockerfile" },
+  instanceType: "basic",
+  maxInstances: 3,
+  ssh: { enabled: false },
+});
+
 export default defineConfig({
+  containers: [sandbox],
   worker: {
     name: "d1agents-pi-durable",
     compatibilityDate: "2026-11-05",
@@ -12,6 +21,7 @@ export default defineConfig({
     },
     exports: {
       PiAgent: exports.durableObject({ storage: "sqlite" }),
+      Sandbox: exports.durableObject({ storage: "sqlite", container: sandbox }),
     },
     env: {
       ACCOUNT_ID: bindings.text("7beca1669580a2216d1e5b0bc3c346f8"),

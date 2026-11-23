@@ -24,8 +24,9 @@ flowchart LR
   S --> P[PiAgent<br>Durable Object + Pi Durable]
   P --> GW[Cloudflare AI Gateway<br>d1agents]
   GW --> OR[OpenRouter<br>GLM 5.3]
-  P --> T[pi 拡張<br>workspace / git / artifacts / codemode]
+  P --> T[pi 拡張<br>workspace / git / artifacts / codemode / tests]
   T --> AR[(Artifacts)]
+  T --> SB[Sandbox<br>Durable Object + Container]
 ```
 
 依存は外側から内側への一方向だけです(Application → Infra → Usecase → Domain)。
@@ -43,6 +44,7 @@ flowchart LR
 | `git`       | `src/infra/pi/extensions/git.ts`       | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など）                  |
 | `artifacts` | `src/infra/pi/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧）                     |
 | `codemode`  | `src/infra/pi/extensions/codemode.ts`  | スクリプトからツールをまとめて呼ぶ Code Mode                                               |
+| `tests`     | `src/infra/pi/extensions/tests.ts`     | `run_tests`:package.json のテスト用スクリプトを Linux コンテナで実行する                   |
 
 1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 
@@ -163,6 +165,24 @@ Pi Durable の Code Mode（`src/infra/pi/extensions/codemode.ts`）を入れて�
 | ---------- | ------------------------------------------------------------ | -------------------------- |
 | `exec`     | ワークスペースの中の JavaScript（`node:fs` と git が使える） | ファイルを読んで計算する   |
 | `codemode` | エージェント自身のツールを呼ぶスクリプト                     | ツールをまとめて何度も呼ぶ |
+
+`exec` と `codemode` には npm も node もありません。テストは次の `run_tests` で動かします。
+
+## テストの実行(run_tests)
+
+`run_tests` は、リポジトリの package.json にあるテスト用スクリプトを Linux コンテナで実行し、終了コードと出力の末尾を返します。エージェントの考える部分(Pi のループとモデル呼び出し)は `PiAgent` に残り、コンテナはコマンドを実行するだけです。
+
+| 項目                   | 中身                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 実行できるもの         | `test`・`test:<名前>`・`check`・`lint`・`typecheck` のうち、package.json に書かれているもの。`[パッケージマネージャー, "run", 名前]` をシェルを通さずに実行 |
+| パッケージマネージャー | ロックファイルで決める(`bun.lock` → bun、`pnpm-lock.yaml` → pnpm、`yarn.lock` → yarn、それ以外 → npm)                                                       |
+| コンテナ               | `Sandbox` Durable Object(`src/application/sandbox.ts`)が持つ Cloudflare Container。セッションごとに 1 つ、最後のコマンドから 2 分で止まる                   |
+| イメージ               | `sandbox/Dockerfile`(Node.js 22、npm、pnpm、yarn、bun、git、`@cloudflare/computer` の `remote-exec`)。サイズは `basic`、最大 3 台                           |
+| ファイル               | コマンドの前に、`/workspace` のファイルを `node_modules` と `.git` を除いてコンテナへ送る(`@cloudflare/computer/remote-exec`)。コンテナの変更は戻さない     |
+| ネットワーク           | なし(`enableInternet: false`)。依存のインストールはまだできないので、依存のないテストだけが通る                                                             |
+| 渡さないもの           | モデルのキー、Artifacts のトークン、API トークン。Dockerfile にも秘密は書かない                                                                             |
+
+`remote-exec` の版は `@cloudflare/computer` と合わせます。`@cloudflare/computer` を上げたら、`sandbox/Dockerfile` の `computer-remote-exec` のタグも同じ版にします。
 
 スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`src/infra/pi/extensions/codemode.ts` のサンドボックスを差し替えるだけで済む作りです）。
 
@@ -293,6 +313,7 @@ claude plugin marketplace update yomiyasu-mini && claude plugin update yomiyasu-
 | `git.test.ts`       | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること                                                                                                                   |
 | `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
 | `codemode.test.ts`  | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること                                                                                          |
+| `tests.test.ts`     | `run_tests` がロックファイルに合うパッケージマネージャーでスクリプトを実行し、失敗をエラーとして返すこと。テスト用以外のスクリプト、package.json にないスクリプト、`/workspace` の外を断ること(コンテナは偽物で代用)                 |
 
 ## ローカルで動かす
 
@@ -325,7 +346,7 @@ bun run start
 bun run deploy
 ```
 
-`cf deploy` がビルドしてからデプロイします。Worker と Durable Object だけで、静的ファイル（Static Assets）はありません。アップロードせずに中身だけ確かめるときは、次のコマンドを使います。
+`cf deploy` がビルドしてからデプロイします。静的ファイル（Static Assets）はありません。`run_tests` 用のコンテナイメージ(`sandbox/Dockerfile`)もビルドするため、`cf build`・`cf deploy`・`cf dev` には Docker が要ります。Docker のない手元では、Workers Builds のデプロイに任せます。アップロードせずに中身だけ確かめるときは、次のコマンドを使います。
 
 ```bash
 bunx cf deploy --dry-run
