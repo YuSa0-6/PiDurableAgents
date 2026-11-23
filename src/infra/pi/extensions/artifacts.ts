@@ -12,7 +12,8 @@ import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch"
 import { Refusal } from "../../../domain/errors";
 import { nameFromUrl, repoName } from "../../../domain/repo-name";
 import { workspacePath } from "../../../domain/workspace-path";
-import { currentBranch, fail, guarded, ok, redacting } from "./git";
+import { currentBranch } from "./git";
+import { fail, guarded, ok, redacting } from "./tool-result";
 
 export type ArtifactsClient = Pick<
   ArtifactClient,
