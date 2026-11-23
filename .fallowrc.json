@@ -1,12 +1,26 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "cloudflare.config.ts",
+    "scripts/hooks/*.ts",
+    ".claude/hooks/*.ts",
+    "scripts/verify/*.ts",
+    ".claude/skills/*/scripts/*.ts"
+  ],
+  "ignorePatterns": ["!.claude/**"],
+  "usedClassMembers": [
+    {
+      "extends": "DurableObject",
+      "members": ["*"]
+    }
+  ],
+  "health": {
+    "ignore": ["**/*.test.ts"]
+  },
   "ignoreDependencies": [
     "@earendil-works/pi-telemetry",
     "typebox",
     "@earendil-works/chord",
-    "@platformatic/vfs",
-    "zod",
-    "cf",
-    "wrangler"
+    "@platformatic/vfs"
   ]
 }

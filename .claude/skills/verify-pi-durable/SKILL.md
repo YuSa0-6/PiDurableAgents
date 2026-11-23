@@ -9,7 +9,7 @@ description: Drive the D1Agents Pi Durable Worker the way a user does (cf dev in
 
 ## 前提
 
-`launch.sh` は `cf dev --mode verify` で起動します。verify モードでは `cloudflare.config.ts` が `SKIP_AUTH_ON_LOCALHOST=1` を足し、localhost から来た呼び出しだけトークンなしで通します。本番のデプロイ(モードなし)にはこの値が入らず、localhost 以外のホストは verify モードでもトークンが要ります(`src/tests/http-contract.test.ts` が確かめます)。トークンの確認そのものはテストが受け持ちます。
+`launch.ts` は `cf dev --mode verify` で起動します。verify モードでは `cloudflare.config.ts` が `SKIP_AUTH_ON_LOCALHOST=1` を足し、localhost から来た呼び出しだけトークンなしで通します。本番のデプロイ(モードなし)にはこの値が入らず、localhost 以外のホストは verify モードでもトークンが要ります(`src/tests/http-contract.test.ts` が確かめます)。トークンの確認そのものはテストが受け持ちます。
 
 | 必要なもの                | 確かめ方                                                                      | ないとき                                                                                                                                                                                                    |
 | ------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -21,11 +21,11 @@ description: Drive the D1Agents Pi Durable Worker the way a user does (cf dev in
 
 ## 手順
 
-1. **Launch**:`sh .claude/skills/verify-pi-durable/scripts/launch.sh`。`.verify/run/` に PID・ポート・ログを置き、`/api/health` が 200 を返すまで待ちます(最大 120 秒)
-2. **Doctor**:`sh .claude/skills/verify-pi-durable/scripts/doctor.sh`。自分が起動したプロセスか、トークンなしの `/api/health` が 200 か、Access の変数があるかを見ます。おかしいと感じたら最初にこれを流します
-3. **Drive**:変えた機能に合う手順を [features/README.md](features/README.md) から選んで流します。呼び出しは `scripts/call.sh` を使います
-4. **Evidence**:`sh .claude/skills/verify-pi-durable/scripts/record.sh "<確かめたこと>"` が `.verify/<sha>.md` を作り、`.verify/run/calls.log`(実行したコマンドとレスポンス)を写します
-5. **Cleanup**:`sh .claude/skills/verify-pi-durable/scripts/cleanup.sh`。自分が起動した PID だけを止めます。`.verify/<sha>.md` は残します
+1. **Launch**:`bun .claude/skills/verify-pi-durable/scripts/launch.ts`。`.verify/run/` に PID・ポート・ログを置き、`/api/health` が 200 を返すまで待ちます(最大 120 秒)
+2. **Doctor**:`bun .claude/skills/verify-pi-durable/scripts/doctor.ts`。自分が起動したプロセスか、トークンなしの `/api/health` が 200 か、Access の変数があるかを見ます。おかしいと感じたら最初にこれを流します
+3. **Drive**:変えた機能に合う手順を [features/README.md](features/README.md) から選んで流します。呼び出しは `scripts/call.ts` を使います
+4. **Evidence**:`bun .claude/skills/verify-pi-durable/scripts/record.ts "<確かめたこと>"` が `.verify/<sha>.md` を作り、`.verify/run/calls.log`(実行したコマンドとレスポンス)を写します
+5. **Cleanup**:`bun .claude/skills/verify-pi-durable/scripts/cleanup.ts`。自分が起動した PID だけを止めます。`.verify/<sha>.md` は残します
 
 ## 証拠の基準
 
@@ -38,9 +38,9 @@ description: Drive the D1Agents Pi Durable Worker the way a user does (cf dev in
 
 ```sh
 S=.claude/skills/verify-pi-durable/scripts
-sh $S/call.sh GET /api/health
-sh $S/call.sh POST /api/events '{"session":"verify","text":"/workspace/hello.txt に hello と書いて読み返して"}'
-sh $S/call.sh GET /api/sessions/verify/repos
-sh $S/call.sh MCP tools/list
-sh $S/call.sh MCP tools/call '{"name":"send_event","arguments":{"session":"verify","text":"hello.txt を読んで"}}'
+bun $S/call.ts GET /api/health
+bun $S/call.ts POST /api/events '{"session":"verify","text":"/workspace/hello.txt に hello と書いて読み返して"}'
+bun $S/call.ts GET /api/sessions/verify/repos
+bun $S/call.ts MCP tools/list
+bun $S/call.ts MCP tools/call '{"name":"send_event","arguments":{"session":"verify","text":"hello.txt を読んで"}}'
 ```

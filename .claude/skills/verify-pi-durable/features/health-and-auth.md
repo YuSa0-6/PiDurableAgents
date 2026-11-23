@@ -13,7 +13,7 @@
 
 ```sh
 S=.claude/skills/verify-pi-durable/scripts
-sh $S/call.sh GET /api/health
+bun $S/call.ts GET /api/health
 ```
 
 合格:`status: 200` で、JSON にモデル名がある。

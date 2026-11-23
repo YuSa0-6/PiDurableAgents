@@ -8,14 +8,18 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
+import { artifactsSessionId } from "../domain/artifacts-session-id";
 import type { AgentEvent, EventResult } from "../domain/event";
 import type { SharedRepo } from "../domain/shared-repo";
-import { EventSession } from "../infra/pi/event-session";
+import type { Sandbox } from "./sandbox";
+import { runEvent } from "../infra/pi/run-event";
 import { shareRepos } from "../infra/pi/share-repos";
 import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
-import { artifactsSessionId, createArtifactsExtension } from "../infra/pi/extensions/artifacts";
+import { createArtifactsExtension } from "../infra/pi/extensions/artifacts";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
+import { createTestsExtension } from "../infra/pi/extensions/tests";
+import { containerRunner } from "../infra/pi/container-runner";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export class PiAgent extends DurableObject<Env> {
@@ -45,6 +49,18 @@ export class PiAgent extends DurableObject<Env> {
       this.registry.install(createGitExtension(this.workspace));
       this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
       this.registry.install(createCodemodeExtension());
+      this.registry.install(
+        createTestsExtension(
+          this.workspace,
+          containerRunner(
+            () =>
+              (this.ctx.exports.Sandbox as unknown as DurableObjectNamespace<Sandbox>).getByName(
+                this.ctx.id.toString(),
+              ),
+            this.workspace,
+          ),
+        ),
+      );
       const models = createModels();
       models.setProvider(gatewayOpenRouterProvider(this.ai, this.model));
       return Harness.open(
@@ -67,7 +83,7 @@ export class PiAgent extends DurableObject<Env> {
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
   async handleEvent(event: AgentEvent, wait = true): Promise<EventResult> {
-    return EventSession.run(this.harness.session(), event, wait);
+    return runEvent(this.harness.session(), event, wait);
   }
 
   async shareRepos(): Promise<SharedRepo[]> {

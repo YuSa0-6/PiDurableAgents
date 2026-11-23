@@ -17,10 +17,11 @@ import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { Extension } from "@earendil-works/pi-durable";
 import type { AgentEvent } from "../domain/event";
-import { EventSession } from "../infra/pi/event-session";
+import { runEvent } from "../infra/pi/run-event";
 import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
+import { createTestsExtension, type CommandResult } from "../infra/pi/extensions/tests";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
 
 export const FAKE_ARTIFACTS_TOKEN = "art_v1_fake";
@@ -44,6 +45,12 @@ function script(context: TranscriptContext): AssistantMessage {
   const codemode = /^codemode ([\s\S]+)$/.exec(prompt);
   if (codemode) {
     return fauxAssistantMessage([fauxToolCall("codemode", { code: codemode[1] })], {
+      stopReason: "toolUse",
+    });
+  }
+  const imported = /^import (\S+)$/.exec(prompt);
+  if (imported) {
+    return fauxAssistantMessage([fauxToolCall("repo_import", { url: imported[1] })], {
       stopReason: "toolUse",
     });
   }
@@ -75,11 +82,22 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   });
   readonly registry = createRegistry();
   readonly #artifactsCalls: string[] = [];
+  readonly #commands: { argv: string[]; cwd: string }[] = [];
+  #commandResult: CommandResult = { exitCode: 0, stdout: "", stderr: "" };
+  #clock = 0;
   readonly #extensions: Extension[] = [
     createWorkspaceExtension(this.workspace),
     createGitExtension(this.workspace),
     createArtifactsExtension(this.workspace, this.#fakeArtifacts(), { pollMs: 1 }),
     createCodemodeExtension(),
+    createTestsExtension(
+      this.workspace,
+      async (argv, cwd) => {
+        this.#commands.push({ argv, cwd });
+        return this.#commandResult;
+      },
+      () => (this.#clock += 1500),
+    ),
   ];
   readonly harness = new PiHarness({
     harness: async ({ storage, context, onWake }) => {
@@ -108,7 +126,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   }
 
   async handleEvent(event: AgentEvent, wait = true) {
-    return EventSession.run(this.harness.session(), event, wait);
+    return runEvent(this.harness.session(), event, wait);
   }
 
   async shareRepos() {
@@ -157,6 +175,18 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     const result = await tool.execute(args as never, {} as never, {} as never);
     const text = (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");
     return { text, isError: result.isError === true };
+  }
+
+  setCommandResult(result: CommandResult): void {
+    this.#commandResult = result;
+  }
+
+  commands(): { argv: string[]; cwd: string }[] {
+    return [...this.#commands];
+  }
+
+  async scheduledWake(): Promise<number | null> {
+    return this.ctx.storage.getAlarm();
   }
 
   artifactsCalls(): string[] {
@@ -257,7 +287,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   }
 
   async writeWorkspaceFile(path: string, text: string): Promise<void> {
-    await this.workspace.fs.mkdir("/workspace", { recursive: true });
+    await this.workspace.fs.mkdir(path.slice(0, path.lastIndexOf("/")), { recursive: true });
     await this.workspace.fs.writeFile(path, text);
   }
 }

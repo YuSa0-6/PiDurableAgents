@@ -15,11 +15,11 @@
 
 ```sh
 S=.claude/skills/verify-pi-durable/scripts
-sh $S/call.sh POST /api/events '{"session":"verify","text":"/workspace/hello.txt に hello と書いて保存し、読み返して"}'
-sh $S/call.sh POST /api/events '{"session":"verify","text":"さっき保存したファイルの中身を教えて"}'
-sh $S/call.sh POST /api/events '{"session":"verify","id":"dup-1","text":"1 と答えて"}'
-sh $S/call.sh POST /api/events '{"session":"verify","id":"dup-1","text":"1 と答えて"}'
-sh $S/call.sh POST /api/events '{"text":""}'
+bun $S/call.ts POST /api/events '{"session":"verify","text":"/workspace/hello.txt に hello と書いて保存し、読み返して"}'
+bun $S/call.ts POST /api/events '{"session":"verify","text":"さっき保存したファイルの中身を教えて"}'
+bun $S/call.ts POST /api/events '{"session":"verify","id":"dup-1","text":"1 と答えて"}'
+bun $S/call.ts POST /api/events '{"session":"verify","id":"dup-1","text":"1 と答えて"}'
+bun $S/call.ts POST /api/events '{"text":""}'
 ```
 
 合格:1 回目と 2 回目の返答に `hello` が出る(ファイルが残っている)。同じ `id` の 2 回目は新しく処理されない。最後は `status: 400`。

@@ -12,7 +12,7 @@ HTTP は **Event Router（Hono）** から入り、MCP のツールも同じユ�
   <img src="docs/architecture/current.png" alt="現状の構成図" width="100%">
 </picture>
 
-現状と、目指す構成（案）の比較は [`docs/architecture/`](docs/architecture/README.md) にあります。
+現状の構成図と、これから足す案の表は [`docs/architecture/`](docs/architecture/README.md) にあります。
 
 ## 全体の流れ
 
@@ -24,8 +24,9 @@ flowchart LR
   S --> P[PiAgent<br>Durable Object + Pi Durable]
   P --> GW[Cloudflare AI Gateway<br>d1agents]
   GW --> OR[OpenRouter<br>GLM 5.3]
-  P --> T[pi 拡張<br>workspace / git / artifacts / codemode]
+  P --> T[pi 拡張<br>workspace / git / artifacts / codemode / tests]
   T --> AR[(Artifacts)]
+  T --> SB[Sandbox<br>Durable Object + Container]
 ```
 
 依存は外側から内側への一方向だけです(Application → Infra → Usecase → Domain)。
@@ -43,6 +44,7 @@ flowchart LR
 | `git`       | `src/infra/pi/extensions/git.ts`       | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など）                  |
 | `artifacts` | `src/infra/pi/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧）                     |
 | `codemode`  | `src/infra/pi/extensions/codemode.ts`  | スクリプトからツールをまとめて呼ぶ Code Mode                                               |
+| `tests`     | `src/infra/pi/extensions/tests.ts`     | `run_tests`:package.json のテスト用スクリプトを Linux コンテナで実行する                   |
 
 1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 
@@ -164,6 +166,24 @@ Pi Durable の Code Mode（`src/infra/pi/extensions/codemode.ts`）を入れて�
 | `exec`     | ワークスペースの中の JavaScript（`node:fs` と git が使える） | ファイルを読んで計算する   |
 | `codemode` | エージェント自身のツールを呼ぶスクリプト                     | ツールをまとめて何度も呼ぶ |
 
+`exec` と `codemode` には npm も node もありません。テストは次の `run_tests` で動かします。
+
+## テストの実行(run_tests)
+
+`run_tests` は、リポジトリの package.json にあるテスト用スクリプトを Linux コンテナで実行し、終了コードと出力の末尾を返します。エージェントの考える部分(Pi のループとモデル呼び出し)は `PiAgent` に残り、コンテナはコマンドを実行するだけです。
+
+| 項目                   | 中身                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 実行できるもの         | `test`・`test:<名前>`・`check`・`lint`・`typecheck` のうち、package.json に書かれているもの。`[パッケージマネージャー, "run", 名前]` をシェルを通さずに実行 |
+| パッケージマネージャー | ロックファイルで決める(`bun.lock` → bun、`pnpm-lock.yaml` → pnpm、`yarn.lock` → yarn、それ以外 → npm)                                                       |
+| コンテナ               | `Sandbox` Durable Object(`src/application/sandbox.ts`)が持つ Cloudflare Container。セッションごとに 1 つ、最後のコマンドから 2 分で止まる                   |
+| イメージ               | `sandbox/Dockerfile`(Node.js 22、npm、pnpm、yarn、bun、git、`@cloudflare/computer` の `remote-exec`)。サイズは `basic`、最大 3 台                           |
+| ファイル               | コマンドの前に、`/workspace` のファイルを `node_modules` と `.git` を除いてコンテナへ送る(`@cloudflare/computer/remote-exec`)。コンテナの変更は戻さない     |
+| ネットワーク           | なし(`enableInternet: false`)。依存のインストールはまだできないので、依存のないテストだけが通る                                                             |
+| 渡さないもの           | モデルのキー、Artifacts のトークン、API トークン。Dockerfile にも秘密は書かない                                                                             |
+
+`remote-exec` の版は `@cloudflare/computer` と合わせます。`@cloudflare/computer` を上げたら、`sandbox/Dockerfile` の `computer-remote-exec` のタグも同じ版にします。
+
 スクリプトが計算を続けているあいだは、同じセッションへの他の指示（中止も含む）が待たされます。重い計算が多くなったら、スクリプトを別の Worker で動かす `RemoteCodemodeSandbox` に切り替えます（`src/infra/pi/extensions/codemode.ts` のサンドボックスを差し替えるだけで済む作りです）。
 
 ## Artifacts（エージェントの git リポジトリ）
@@ -201,15 +221,16 @@ GitHub App で push と PR を作る仕組みは、Artifacts に切り替えた�
 
 ## ツールチェーン
 
-| 道具                                                | 用途                                                                | コマンド                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `cf` CLI（beta）                                    | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作 | `bun run start` / `bun run build` / `bun run deploy` / `bun run types` |
-| Vite（Vite+ と Cloudflare Vite プラグイン beta）    | `cf` が中で使うビルド                                               | `vite.config.ts`                                                       |
-| Hono                                                | Event Router                                                        | `src/application/http/router.ts`                                       |
-| Wrangler                                            | ログを流して見る（`cf` が未対応のため）と、テスト用の設定           | `bunx wrangler tail d1agents-pi-durable`                               |
-| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト                                                  | `bun run test`                                                         |
-| Bun                                                 | パッケージ管理とスクリプト実行（`cf` 自体は Node.js で動く）        | `bun install` / `bun run <name>`                                       |
-| Vite+（`vp check`）                                 | 整形（Oxfmt）、リント（Oxlint）、型チェック（tsrs）                 | `bun run check`                                                        |
+| 道具                                                | 用途                                                                                          | コマンド                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `cf` CLI（beta）                                    | 開発サーバー、ビルド、デプロイ、型の生成、Cloudflare リソースの操作                           | `bun run start` / `bun run build` / `bun run deploy` / `bun run types` |
+| Vite（Vite+ と Cloudflare Vite プラグイン beta）    | `cf` が中で使うビルド                                                                         | `vite.config.ts`                                                       |
+| Hono                                                | Event Router                                                                                  | `src/application/http/router.ts`                                       |
+| Wrangler                                            | ログを流して見る（`cf` が未対応のため）と、テスト用の設定                                     | `bunx wrangler tail d1agents-pi-durable`                               |
+| Vitest 5（Vite+ 経由）+ `@cloudflare/vitest-plugin` | Workers 上のテスト                                                                            | `bun run test`                                                         |
+| Bun                                                 | パッケージ管理とスクリプト実行（`cf` 自体は Node.js で動く）                                  | `bun install` / `bun run <name>`                                       |
+| Vite+（`vp check`）                                 | 整形（Oxfmt）、リント（Oxlint と自作ルール `lint/clean-architecture.ts`）、型チェック（tsrs） | `bun run check`                                                        |
+| TypeScript のスクリプト                             | git フック・CI・Claude Code のフックから呼ぶ手順（シェルは使わない）                          | `bun scripts/<名前>.ts`                                                |
 
 Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wrangler.jsonc` から `cf migrate` で移行しました。バインディングと実行環境の型は `cf` が `.cloudflare/types/` に生成します（`bun run typecheck` が先に生成します）。
 
@@ -251,9 +272,9 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | git フック           | `.vite-hooks/pre-commit`、`.vite-hooks/pre-push`                 | `bun install`（`prepare` が `vp hooks enable` を実行） |
 | Claude Code のフック | `.claude/settings.json` の `hooks` と `.claude/hooks/*.ts`       | Claude Code でこのリポジトリを開く                     |
 | CI                   | `.github/workflows/verify.yml`、`.github/workflows/mutation.yml` | PR と main への push で自動                            |
-| 共通スクリプト       | `scripts/verify/secrets.sh`、`scripts/verify/workflows.sh`       | フックと CI の両方が呼ぶ                               |
+| 共通スクリプト       | `scripts/verify/*.ts`、`scripts/hooks/*.ts`(TypeScript)          | git フックと CI が `bun scripts/...` で呼ぶ            |
 
-betterleaks と zizmor は npm にないので別に入れます（`brew install betterleaks zizmor`）。入っていないときは手元の検査を飛ばして案内を出し、CI で必ず実行します。
+git フックは `bun scripts/hooks/*.ts` を呼ぶので、コミットする環境の PATH に `bun` が要ります。betterleaks と zizmor は npm にないので別に入れます（`brew install betterleaks zizmor`）。入っていないときは手元の検査を飛ばして案内を出し、CI で必ず実行します。
 
 | やりたいこと                      | コマンド                                     |
 | --------------------------------- | -------------------------------------------- |
@@ -293,6 +314,7 @@ claude plugin marketplace update yomiyasu-mini && claude plugin update yomiyasu-
 | `git.test.ts`       | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること                                                                                                                   |
 | `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
 | `codemode.test.ts`  | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること                                                                                          |
+| `tests.test.ts`     | `run_tests` がロックファイルに合うパッケージマネージャーでスクリプトを実行し、失敗をエラーとして返すこと。テスト用以外のスクリプト、package.json にないスクリプト、`/workspace` の外を断ること(コンテナは偽物で代用)                 |
 
 ## ローカルで動かす
 
@@ -310,15 +332,38 @@ bun run start
 
 ## デプロイ
 
+`main` にマージすると、Cloudflare Workers Builds が自動でビルドしてデプロイします。
+
+| 項目               | 設定                            |
+| ------------------ | ------------------------------- |
+| 対象ブランチ       | `main`                          |
+| ルートディレクトリ | `/`                             |
+| ビルドコマンド     | `bun install --frozen-lockfile` |
+| デプロイコマンド   | `bun run deploy`                |
+
+手元からデプロイするときは、次のコマンドを使います。
+
 ```bash
 bun run deploy
 ```
 
-`cf deploy` がビルドしてからデプロイします。Worker と Durable Object だけで、静的ファイル（Static Assets）はありません。アップロードせずに中身だけ確かめるときは、次のコマンドを使います。
+`cf deploy` がビルドしてからデプロイします。静的ファイル（Static Assets）はありません。`run_tests` 用のコンテナイメージ(`sandbox/Dockerfile`)もビルドするため、`cf build`・`cf deploy`・`cf dev` には Docker が要ります。Docker のない手元では、Workers Builds のデプロイに任せます。アップロードせずに中身だけ確かめるときは、次のコマンドを使います。
 
 ```bash
 bunx cf deploy --dry-run
 ```
+
+### 本番での動作確認(smoke)
+
+デプロイのあと、GitHub Actions の `smoke` ワークフローを手で流すと、本番の Worker で `run_tests` がコンテナを使えるかを確かめます(`scripts/smoke/run-tests.ts`)。
+
+| 項目         | 中身                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 流し方       | Actions の `smoke` から **Run workflow**                                                                                             |
+| すること     | 毎回新しいセッションで、`node --test` のテストを 1 つ作らせ、`run_tests` で実行させる                                                |
+| 合格の条件   | 回答が完了していて、本文に `run test passed with exit code 0` が入っている                                                           |
+| 後片付け     | 流すたびに `smoke-<run id>` のセッション(Durable Object と Artifacts のリポジトリ)が本番に 1 つ残る                                  |
+| シークレット | `CLOUDFLARE_ACCOUNT_TOKEN`(必須)。Worker の前に Cloudflare Access があるときは `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` も |
 
 ログを流して見る機能（`wrangler tail`）は `cf` にまだないので、`bunx wrangler tail d1agents-pi-durable` を使います。
 
@@ -334,4 +379,4 @@ bunx cf deploy --dry-run
 | `agents` バージョン    | `*`（monorepo 内）                         | `^0.33.0`（Pi 1.5 対応）                             |
 | `@cloudflare/computer` | 0.8（`WorkerJavaScriptBackend`、`ws:git`） | 0.10（`CodemodeBackend`、`codemode:git`）            |
 
-Pi harness 本体の設計メモは [`docs/upstream-README.md`](docs/upstream-README.md) と [`docs/upstream-NOTES.md`](docs/upstream-NOTES.md) にあります。Pi は MIT ライセンスです（[`licenses/mit-earendil-pi.txt`](licenses/mit-earendil-pi.txt)）。
+Pi は MIT ライセンスです（[`licenses/mit-earendil-pi.txt`](licenses/mit-earendil-pi.txt)）。

@@ -1,12 +1,19 @@
 import type { Workspace } from "@cloudflare/computer";
 import type { ArtifactClient } from "@cloudflare/computer/artifacts";
-import { defineTool, type Extension } from "@earendil-works/pi-durable";
+import {
+  defineTool,
+  type Extension,
+  type ToolExecutionResult,
+  type ToolPark,
+} from "@earendil-works/pi-durable";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { obj, opt, str } from "@earendil-works/pi-schema";
 import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch";
 import { Refusal } from "../../../domain/errors";
 import { nameFromUrl, repoName } from "../../../domain/repo-name";
 import { workspacePath } from "../../../domain/workspace-path";
-import { currentBranch, fail, guarded, ok, redacting } from "./git";
+import { currentBranch } from "./git";
+import { fail, guarded, ok, redacting } from "./tool-result";
 
 export type ArtifactsClient = Pick<
   ArtifactClient,
@@ -19,6 +26,15 @@ const IMPORT_WAIT_MS = 90_000;
 export type ArtifactsOptions = {
   readonly pollMs?: number;
 };
+
+const ImportParameters = obj({
+  url: str({ description: "HTTPS Git URL, e.g. https://github.com/owner/repo." }),
+  name: opt(str({ description: "Repository name. Default: from the URL." })),
+  branch: opt(str({ description: "Branch to import. Default: the remote's default branch." })),
+  dir: opt(str({ description: "Where to clone. Default: /workspace/<name>." })),
+});
+
+type ImportWait = { readonly deadline: number };
 
 function gitHeaders(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}` };
@@ -35,7 +51,7 @@ export function createArtifactsExtension(
   const withToken = async (
     name: string,
     scope: "read" | "write",
-    work: (token: string, remote: string) => Promise<ReturnType<typeof ok>>,
+    work: (token: string, remote: string) => Promise<ToolExecutionResult>,
   ) => {
     const { remote } = await artifacts.get(name);
     const token = await artifacts.createToken(name, scope, OPERATION_TOKEN_TTL);
@@ -52,16 +68,12 @@ export function createArtifactsExtension(
       return ok(`Cloned ${name} into ${dir} on ${await currentBranch(workspace, dir)}.`);
     });
 
-  const waitUntilReady = async (name: string): Promise<void> => {
-    const deadline = Date.now() + IMPORT_WAIT_MS;
-    for (;;) {
-      try {
-        await artifacts.get(name);
-        return;
-      } catch (error) {
-        if (Date.now() > deadline) throw error;
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-      }
+  const importError = async (name: string): Promise<unknown> => {
+    try {
+      await artifacts.get(name);
+      return undefined;
+    } catch (error) {
+      return error ?? new Error(`${name} is not ready.`);
     }
   };
 
@@ -85,32 +97,31 @@ export function createArtifactsExtension(
       },
     ],
     tools: [
-      defineTool({
+      defineTool<typeof ImportParameters, JsonValue, ImportWait>({
         name: "repo_import",
         description:
           "Import a public Git repository (HTTPS URL) into this session's Artifacts and clone it into /workspace.",
-        parameters: obj({
-          url: str({ description: "HTTPS Git URL, e.g. https://github.com/owner/repo." }),
-          name: opt(str({ description: "Repository name. Default: from the URL." })),
-          branch: opt(
-            str({ description: "Branch to import. Default: the remote's default branch." }),
-          ),
-          dir: opt(str({ description: "Where to clone. Default: /workspace/<name>." })),
-        }),
+        parameters: ImportParameters,
         replay: "unsafe",
-        execute: (args) =>
-          guarded(async () => {
-            const url = new URL(args.url);
-            if (url.protocol !== "https:")
+        execute: (args, api) =>
+          guarded(async (): Promise<ToolExecutionResult | ToolPark<ImportWait>> => {
+            if (new URL(args.url).protocol !== "https:")
               throw new Refusal("Only HTTPS Git URLs can be imported.");
             const name = repoName(args.name ?? nameFromUrl(args.url));
             const dir = workspacePath(args.dir ?? `/workspace/${name}`);
-            const imported = await artifacts.import(name, {
-              url: args.url,
-              ...(args.branch ? { branch: args.branch } : {}),
-            });
-            await dropInitialToken(name, imported.token);
-            await waitUntilReady(name);
+            if (api.checkpoint === undefined) {
+              const imported = await artifacts.import(name, {
+                url: args.url,
+                ...(args.branch ? { branch: args.branch } : {}),
+              });
+              await dropInitialToken(name, imported.token);
+            }
+            const deadline = api.checkpoint?.deadline ?? api.now() + IMPORT_WAIT_MS;
+            const notReady = await importError(name);
+            if (notReady !== undefined) {
+              if (api.now() > deadline) throw notReady;
+              return { sleep: { checkpoint: { deadline }, until: api.now() + pollMs } };
+            }
             const cloned = await clone(name, dir, args.branch);
             if (cloned.isError) return cloned;
             return ok(`Imported ${args.url} as ${name}. ${textOf(cloned)}`);
@@ -209,11 +220,6 @@ export function createArtifactsExtension(
   };
 }
 
-function textOf(result: ReturnType<typeof ok>): string {
+function textOf(result: ToolExecutionResult): string {
   return (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");
-}
-
-export function artifactsSessionId(session: string): string {
-  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(session) && !session.includes("__")) return session;
-  return `s-${session.replace(/_+/g, "-").replace(/[^A-Za-z0-9._-]/g, "-")}`;
 }

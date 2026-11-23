@@ -14,9 +14,9 @@
 
 ```sh
 S=.claude/skills/verify-pi-durable/scripts
-sh $S/call.sh MCP initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}'
-sh $S/call.sh MCP tools/list
-sh $S/call.sh MCP tools/call '{"name":"send_event","arguments":{"session":"verify","text":"hello.txt の中身を教えて"}}'
+bun $S/call.ts MCP initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}'
+bun $S/call.ts MCP tools/list
+bun $S/call.ts MCP tools/call '{"name":"send_event","arguments":{"session":"verify","text":"hello.txt の中身を教えて"}}'
 curl -s -o /dev/null -w '%{http_code}\n' -X OPTIONS "http://localhost:$(cat .verify/run/port)/mcp"
 ```
 

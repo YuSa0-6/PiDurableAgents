@@ -1,9 +1,10 @@
 import type { Workspace } from "@cloudflare/computer";
-import { defineTool, type Extension, type ToolExecutionResult } from "@earendil-works/pi-durable";
+import { defineTool, type Extension } from "@earendil-works/pi-durable";
 import { obj, str } from "@earendil-works/pi-schema";
 import { BRANCH_PREFIX, requireAgentBranch } from "../../../domain/agent-branch";
 import { Refusal } from "../../../domain/errors";
 import { workspacePath } from "../../../domain/workspace-path";
+import { fail, guarded, ok } from "./tool-result";
 
 const COMMIT_AUTHOR = { name: "d1agents-bot", email: "d1agents-bot@noreply.d1agents.invalid" };
 
@@ -11,44 +12,6 @@ export async function currentBranch(workspace: Workspace, dir: string): Promise<
   const branch = await workspace.git.currentBranch({ dir });
   if (!branch) throw new Refusal(`${dir} is not on a branch (detached HEAD).`);
   return branch;
-}
-
-export function ok(text: string): ToolExecutionResult {
-  return { output: [{ type: "text", text }] };
-}
-
-export function fail(text: string): ToolExecutionResult {
-  return { output: [{ type: "text", text }], isError: true };
-}
-
-export async function guarded(
-  run: () => Promise<ToolExecutionResult>,
-): Promise<ToolExecutionResult> {
-  try {
-    return await run();
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error));
-  }
-}
-
-export async function redacting(
-  secrets: readonly string[],
-  work: () => Promise<ToolExecutionResult>,
-): Promise<ToolExecutionResult> {
-  const scrub = (text: string) =>
-    secrets.filter(Boolean).reduce((out, secret) => out.replaceAll(secret, "[redacted]"), text);
-  let result: ToolExecutionResult;
-  try {
-    result = await work();
-  } catch (error) {
-    result = fail(error instanceof Error ? error.message : String(error));
-  }
-  return {
-    ...result,
-    output: (result.output ?? []).map((part) =>
-      part.type === "text" ? { ...part, text: scrub(part.text) } : part,
-    ),
-  };
 }
 
 const DirParam = str({
