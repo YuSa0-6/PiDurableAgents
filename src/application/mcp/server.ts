@@ -5,6 +5,7 @@ import { requireBearer } from "../bearer";
 import { compose, type App } from "../compose";
 import { health } from "../../usecase/health";
 import { listSessionRepos } from "../../usecase/list-session-repos";
+import { readSessionLog } from "../../usecase/read-session-log";
 import { sendEvent } from "../../usecase/send-event";
 
 const corsHeaders = {
@@ -37,6 +38,18 @@ const sendInput = z.object({
 
 const reposInput = z.object({
   session: z.string().describe("Session name, the Durable Object name used with send_event."),
+});
+
+const logInput = z.object({
+  session: z.string().describe("Session name, the Durable Object name used with send_event."),
+  after: z
+    .number()
+    .int()
+    .optional()
+    .describe(
+      "Return entries after this seq. Defaults to 0, the start. Pass lastSeq from the previous call to read on.",
+    ),
+  limit: z.number().int().optional().describe("Most entries to return, 1 to 200. Defaults to 50."),
 });
 
 export class AgentMcp {
@@ -83,6 +96,20 @@ export class AgentMcp {
         inputSchema: reposInput,
       },
       (input) => AgentMcp.#reply(() => listSessionRepos(app.agents, input.session)),
+    );
+    server.registerTool(
+      "session_log",
+      {
+        title: "Session log",
+        description:
+          "Read one session's log: whether it is busy, its queued and running operations, and its conversation entries oldest first. Same payload as GET /api/sessions/:id/log.",
+        inputSchema: logInput,
+        annotations: { readOnlyHint: true },
+      },
+      (input) =>
+        AgentMcp.#reply(() =>
+          readSessionLog(app.agents, input.session, { after: input.after, limit: input.limit }),
+        ),
     );
     server.registerTool(
       "health",

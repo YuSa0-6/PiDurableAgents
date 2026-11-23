@@ -17,6 +17,8 @@ import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { Extension } from "@earendil-works/pi-durable";
 import type { AgentEvent } from "../domain/event";
+import { piLogSource, readLog } from "../infra/pi/read-log";
+import type { LogQuery, SessionLog } from "../domain/session-log";
 import { runEvent } from "../infra/pi/run-event";
 import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
@@ -127,6 +129,10 @@ export class PiHarnessTestObject extends DurableObject<Env> {
 
   async handleEvent(event: AgentEvent, wait = true) {
     return runEvent(this.harness.session(), event, wait);
+  }
+
+  async readLog(query: LogQuery): Promise<SessionLog> {
+    return readLog(piLogSource(this.harness), query);
   }
 
   async shareRepos() {

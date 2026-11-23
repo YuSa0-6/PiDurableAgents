@@ -3,6 +3,7 @@ import type { AgentEvent } from "../domain/event";
 import { InvalidInput } from "../domain/errors";
 import { health } from "./health";
 import { listSessionRepos } from "./list-session-repos";
+import { readSessionLog } from "./read-session-log";
 import type { AgentGateway } from "./ports/agent-gateway";
 import { sendEvent } from "./send-event";
 
@@ -25,6 +26,12 @@ function fakeAgents() {
         expiresAt: "2026-11-22T01:00:00Z",
       },
     ],
+    readLog: async (_session, query) => ({
+      busy: false,
+      pending: [],
+      entries: [],
+      lastSeq: query.after,
+    }),
   };
   return { agents, handled };
 }
@@ -72,5 +79,22 @@ describe("listSessionRepos", () => {
 describe("health", () => {
   it("reports the model", () => {
     expect(health("m")).toEqual({ ok: true, model: "m" });
+  });
+});
+
+describe("readSessionLog", () => {
+  it("parses the query and asks the session", async () => {
+    const { agents } = fakeAgents();
+    expect(await readSessionLog(agents, "demo", { after: "5" })).toEqual({
+      busy: false,
+      pending: [],
+      entries: [],
+      lastSeq: 5,
+    });
+  });
+
+  it("rejects an invalid session before asking", async () => {
+    const { agents } = fakeAgents();
+    await expect(readSessionLog(agents, "bad.name", {})).rejects.toThrow(InvalidInput);
   });
 });
