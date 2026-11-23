@@ -6,6 +6,7 @@ import { InvalidInput } from "../../domain/errors";
 import type { EventInput } from "../../domain/event";
 import { health } from "../../usecase/health";
 import { listSessionRepos } from "../../usecase/list-session-repos";
+import { readSessionLog } from "../../usecase/read-session-log";
 import { sendEvent } from "../../usecase/send-event";
 
 export const app = new Hono<{ Bindings: Env; Variables: { app: App } }>();
@@ -27,6 +28,15 @@ app.post("/api/events", async (c) => {
 
 app.get("/api/sessions/:id/repos", async (c) =>
   c.json(await listSessionRepos(c.var.app.agents, c.req.param("id") ?? "")),
+);
+
+app.get("/api/sessions/:id/log", async (c) =>
+  c.json(
+    await readSessionLog(c.var.app.agents, c.req.param("id") ?? "", {
+      after: c.req.query("after"),
+      limit: c.req.query("limit"),
+    }),
+  ),
 );
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

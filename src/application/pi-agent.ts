@@ -12,6 +12,8 @@ import { artifactsSessionId } from "../domain/artifacts-session-id";
 import type { AgentEvent, EventResult } from "../domain/event";
 import type { SharedRepo } from "../domain/shared-repo";
 import type { Sandbox } from "./sandbox";
+import { piLogSource, readLog } from "../infra/pi/read-log";
+import type { LogQuery, SessionLog } from "../domain/session-log";
 import { runEvent } from "../infra/pi/run-event";
 import { shareRepos } from "../infra/pi/share-repos";
 import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
@@ -84,6 +86,10 @@ export class PiAgent extends DurableObject<Env> {
 
   async handleEvent(event: AgentEvent, wait = true): Promise<EventResult> {
     return runEvent(this.harness.session(), event, wait);
+  }
+
+  async readLog(query: LogQuery): Promise<SessionLog> {
+    return readLog(piLogSource(this.harness), query);
   }
 
   async shareRepos(): Promise<SharedRepo[]> {

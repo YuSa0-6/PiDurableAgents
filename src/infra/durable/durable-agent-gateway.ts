@@ -1,5 +1,6 @@
 import type { AgentEvent, EventResult } from "../../domain/event";
 import type { SessionId } from "../../domain/session-id";
+import type { LogQuery, SessionLog } from "../../domain/session-log";
 import type { SharedRepo } from "../../domain/shared-repo";
 import type { AgentGateway } from "../../usecase/ports/agent-gateway";
 
@@ -7,6 +8,7 @@ export type AgentObjects = {
   getByName(name: string): {
     handleEvent(event: AgentEvent, wait: boolean): Promise<EventResult>;
     shareRepos(): Promise<SharedRepo[]>;
+    readLog(query: LogQuery): Promise<SessionLog>;
   };
 };
 
@@ -23,5 +25,9 @@ export class DurableAgentGateway implements AgentGateway {
 
   shareRepos(session: SessionId): Promise<SharedRepo[]> {
     return this.#objects.getByName(session).shareRepos();
+  }
+
+  readLog(session: SessionId, query: LogQuery): Promise<SessionLog> {
+    return this.#objects.getByName(session).readLog(query);
   }
 }

@@ -60,6 +60,7 @@ describe("HTTP contract: authentication", () => {
     expect((await call("/api/nope")).status).toBe(401);
     expect((await postEvent({ text: "hi" }, {})).status).toBe(401);
     expect((await call("/api/sessions/demo/repos")).status).toBe(401);
+    expect((await call("/api/sessions/demo/log")).status).toBe(401);
   });
 
   it("adds CORS headers to a rejected MCP request and lets the preflight through", async () => {
@@ -223,5 +224,79 @@ describe("HTTP contract: POST /api/events dispatch", () => {
   it("waits for any wait value other than false", async () => {
     const response = await postEvent({ text: "now", session: session(), wait: "false" });
     expect(response.body.result.status).toBe("done");
+  });
+});
+
+describe("HTTP contract: GET /api/sessions/:id/log", () => {
+  const log = (name: string, query = "") =>
+    call(`/api/sessions/${name}/log${query}`, { headers: auth });
+
+  it("returns an empty log for a new session", async () => {
+    const response = await log(session());
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ busy: false, pending: [], entries: [], lastSeq: 0 });
+  });
+
+  it("shows the event, the question and the answer in order, and reads on after lastSeq", async () => {
+    const name = session();
+    await postEvent({ text: "hello", session: name, source: "webhook" });
+    const first = await log(name);
+    expect(first.status).toBe(200);
+    expect(first.body.busy).toBe(false);
+    const seqs = first.body.entries.map((entry: { seq: number }) => entry.seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(first.body.lastSeq).toBe(seqs.at(-1));
+    expect(first.body.entries).toContainEqual(
+      expect.objectContaining({ kind: "app.event", data: { source: "webhook", type: "message" } }),
+    );
+    const messages = first.body.entries.flatMap(
+      (entry: { messages?: unknown[] }) => entry.messages ?? [],
+    );
+    expect(messages).toContainEqual({ role: "user", text: "hello" });
+    expect(messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", text: "echo: hello" }),
+    );
+    expect(
+      first.body.entries.find((entry: { messages?: unknown[] }) => entry.messages)?.time,
+    ).toBeTypeOf("number");
+
+    const rest = await log(name, `?after=${first.body.lastSeq}`);
+    expect(rest.body).toEqual({
+      busy: false,
+      pending: [],
+      entries: [],
+      lastSeq: first.body.lastSeq,
+    });
+
+    const paged = await log(name, "?limit=1");
+    expect(paged.body.entries).toHaveLength(1);
+    expect(paged.body.lastSeq).toBe(seqs[0]);
+  });
+
+  it("names the tool and its result, and cuts long text", async () => {
+    const name = session();
+    const long = "z".repeat(5000);
+    await env.PI_HARNESS_TEST.getByName(name).writeWorkspaceFile("/workspace/long.txt", long);
+    await postEvent({ text: "read /workspace/long.txt", session: name });
+    const messages = (await log(name)).body.entries.flatMap(
+      (entry: { messages?: unknown[] }) => entry.messages ?? [],
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", toolCalls: ["read"] }),
+    );
+    const result = messages.find((message: { role: string }) => message.role === "toolResult");
+    expect(result).toMatchObject({ toolName: "read", isError: false, truncated: true });
+    expect(result.text).toHaveLength(4000);
+  });
+
+  it.each([
+    ["/api/sessions/bad.name/log", "invalid session id"],
+    ["/api/sessions/demo/log?after=-1", "after must be a whole number of 0 or more"],
+    ["/api/sessions/demo/log?after=x", "after must be a whole number of 0 or more"],
+    ["/api/sessions/demo/log?limit=1.5", "limit must be a whole number of 0 or more"],
+  ])("answers 400 for %s", async (path, error) => {
+    const response = await call(path, { headers: auth });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error });
   });
 });

@@ -90,6 +90,7 @@ describe("MCP", () => {
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "health",
       "send_event",
+      "session_log",
       "session_repos",
     ]);
   });
@@ -216,5 +217,30 @@ describe("MCP", () => {
         },
       ],
     });
+  });
+
+  it("reads a session log with the same rules as HTTP", async () => {
+    const headers = { authorization: `Bearer ${token}` };
+    const session = `mcp-log-${crypto.randomUUID()}`;
+    await post(
+      rpc("tools/call", { name: "send_event", arguments: { session, text: "hello" } }),
+      headers,
+    );
+    const call = async (args: Record<string, unknown>) =>
+      toolText(
+        (await post(rpc("tools/call", { name: "session_log", arguments: args }), headers)).payload,
+      );
+
+    const log = await call({ session });
+    expect(log.isError).toBe(false);
+    const body = JSON.parse(log.text);
+    expect(body.busy).toBe(false);
+    expect(body.entries.map((entry: { kind: string }) => entry.kind)).toContain("app.event");
+
+    const rest = JSON.parse((await call({ session, after: body.lastSeq })).text);
+    expect(rest).toEqual({ busy: false, pending: [], entries: [], lastSeq: body.lastSeq });
+
+    const bad = await call({ session: "bad.name" });
+    expect(bad).toEqual({ text: JSON.stringify({ error: "invalid session id" }), isError: true });
   });
 });
