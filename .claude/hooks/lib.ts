@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { git, root } from "../../scripts/lib";
+import { git } from "../../scripts/lib";
 
-export { bin, git, root, run } from "../../scripts/lib";
+export { bin, git, run } from "../../scripts/lib";
+
+export const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+process.chdir(root);
 
 export const codePaths = [
   "src/",

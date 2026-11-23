@@ -2,27 +2,24 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-export const root = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-
 export type RunOptions = { readonly quiet?: boolean };
 
 export function run(cmd: readonly string[], options: RunOptions = {}) {
   const [command = "", ...args] = cmd;
   const proc = spawnSync(command, args, {
-    cwd: root,
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
   });
-  const output = `${proc.stdout}${proc.stderr}`;
+  const stdout = proc.stdout ?? "";
+  const output = `${stdout}${proc.stderr ?? ""}`;
   const ok = proc.status === 0;
   if (!ok && !options.quiet) process.stderr.write(tail(output, 80));
-  return { ok, output };
+  return { ok, stdout, output };
 }
 
 export function stream(cmd: readonly string[], input?: string) {
   const [command = "", ...args] = cmd;
   const proc = spawnSync(command, args, {
-    cwd: root,
     input,
     maxBuffer: 256 * 1024 * 1024,
     stdio: [input === undefined ? "inherit" : "pipe", "inherit", "inherit"],
@@ -32,11 +29,17 @@ export function stream(cmd: readonly string[], input?: string) {
 
 export function git(...args: string[]) {
   const result = run(["git", ...args], { quiet: true });
-  return result.ok ? result.output.trim() : "";
+  return result.ok ? result.stdout.trim() : "";
+}
+
+export function gitOrExit(...args: string[]) {
+  const result = run(["git", ...args]);
+  if (!result.ok) process.exit(1);
+  return result.stdout;
 }
 
 export function bin(name: string) {
-  const local = path.join(root, "node_modules", ".bin", name);
+  const local = path.join(process.cwd(), "node_modules", ".bin", name);
   return existsSync(local) ? local : name;
 }
 

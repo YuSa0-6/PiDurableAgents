@@ -1,4 +1,4 @@
-import { finish, git, has, stream } from "../lib";
+import { finish, git, gitOrExit, has, stream } from "../lib";
 
 const excluded = [":(exclude)bun.lock", ":(exclude)pnpm-lock.yaml"];
 const scanStdin = ["betterleaks", "stdin", "--redact", "--no-banner"];
@@ -12,11 +12,12 @@ function pushedPatch() {
     git("rev-parse", "--verify", "--quiet", "@{upstream}") ||
     git("rev-parse", "--verify", "--quiet", "origin/main");
   const range = base ? `${base}..HEAD` : "HEAD";
-  return git("log", "--no-color", "-p", range, "--", ".", ...excluded);
+  return gitOrExit("log", "--no-color", "-p", range, "--", ".", ...excluded);
 }
 
 const modes: Record<string, () => boolean> = {
-  staged: () => scan(git("diff", "--cached", "--no-color", "--unified=0", "--", ".", ...excluded)),
+  staged: () =>
+    scan(gitOrExit("diff", "--cached", "--no-color", "--unified=0", "--", ".", ...excluded)),
   push: () => scan(pushedPatch()),
   all: () =>
     stream(["betterleaks", "git", ".", "--config", ".betterleaks.toml", "--redact", "--no-banner"]),

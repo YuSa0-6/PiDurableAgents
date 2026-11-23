@@ -274,7 +274,7 @@ Worker の設定は `cloudflare.config.ts`（TypeScript）に書きます。`wra
 | CI                   | `.github/workflows/verify.yml`、`.github/workflows/mutation.yml` | PR と main への push で自動                            |
 | 共通スクリプト       | `scripts/verify/*.ts`、`scripts/hooks/*.ts`(TypeScript)          | git フックと CI が `bun scripts/...` で呼ぶ            |
 
-betterleaks と zizmor は npm にないので別に入れます（`brew install betterleaks zizmor`）。入っていないときは手元の検査を飛ばして案内を出し、CI で必ず実行します。
+git フックは `bun scripts/hooks/*.ts` を呼ぶので、コミットする環境の PATH に `bun` が要ります。betterleaks と zizmor は npm にないので別に入れます（`brew install betterleaks zizmor`）。入っていないときは手元の検査を飛ばして案内を出し、CI で必ず実行します。
 
 | やりたいこと                      | コマンド                                     |
 | --------------------------------- | -------------------------------------------- |
