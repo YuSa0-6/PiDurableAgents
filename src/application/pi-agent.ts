@@ -9,6 +9,7 @@ import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
 import { artifactsSessionId } from "../domain/artifacts-session-id";
+import { RUN_BUDGET } from "../domain/budget";
 import type { AgentEvent, EventResult } from "../domain/event";
 import type { SharedRepo } from "../domain/shared-repo";
 import type { Sandbox } from "./sandbox";
@@ -18,6 +19,7 @@ import { runEvent } from "../infra/pi/run-event";
 import { shareRepos } from "../infra/pi/share-repos";
 import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
 import { createArtifactsExtension } from "../infra/pi/extensions/artifacts";
+import { createBudgetExtension } from "../infra/pi/extensions/budget";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
 import { createTestsExtension } from "../infra/pi/extensions/tests";
@@ -51,6 +53,7 @@ export class PiAgent extends DurableObject<Env> {
       this.registry.install(createGitExtension(this.workspace));
       this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
       this.registry.install(createCodemodeExtension());
+      this.registry.install(createBudgetExtension(() => RUN_BUDGET));
       this.registry.install(
         createTestsExtension(
           this.workspace,

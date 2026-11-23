@@ -38,13 +38,14 @@ flowchart LR
 | Infra       | `src/infra/`       | ポートの実装(Account API トークンの確認、Durable Object の呼び出し、時刻と ID)、OpenRouter の設定、pi 拡張、会話への記録                                                     |
 | Application | `src/application/` | Worker の入口(`worker.ts`)、Hono の Event Router(`http/router.ts`)、MCP(`mcp/server.ts`)、Bearer 認証、部品の組み立て(`compose.ts`)、Durable Object `PiAgent`(`pi-agent.ts`) |
 
-| pi 拡張     | ファイル                               | 中身                                                                                       |
-| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `workspace` | `src/infra/pi/extensions/workspace.ts` | システムプロンプトと、Durable Object の SQLite 上のファイル操作・JavaScript 実行（`exec`） |
-| `git`       | `src/infra/pi/extensions/git.ts`       | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など）                  |
-| `artifacts` | `src/infra/pi/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧）                     |
-| `codemode`  | `src/infra/pi/extensions/codemode.ts`  | スクリプトからツールをまとめて呼ぶ Code Mode                                               |
-| `tests`     | `src/infra/pi/extensions/tests.ts`     | `run_tests`:package.json のテスト用スクリプトを Linux コンテナで実行する                   |
+| pi 拡張     | ファイル                               | 中身                                                                                                                                       |
+| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `workspace` | `src/infra/pi/extensions/workspace.ts` | システムプロンプトと、Durable Object の SQLite 上のファイル操作・JavaScript 実行（`exec`）                                                 |
+| `git`       | `src/infra/pi/extensions/git.ts`       | `git_branch` と `git_commit`、push の決まり（`agent/` ブランチだけ など）                                                                  |
+| `artifacts` | `src/infra/pi/extensions/artifacts.ts` | Cloudflare Artifacts のリポジトリ（取り込み・作成・clone・push・一覧）                                                                     |
+| `codemode`  | `src/infra/pi/extensions/codemode.ts`  | スクリプトからツールをまとめて呼ぶ Code Mode                                                                                               |
+| `tests`     | `src/infra/pi/extensions/tests.ts`     | `run_tests`:package.json のテスト用スクリプトを Linux コンテナで実行する                                                                   |
+| `budget`    | `src/infra/pi/extensions/budget.ts`    | 1 回の実行の上限(ツールの往復 20 回・150 万トークン・$0.30・10 分)。超えたらその往復で実行を止め、理由を会話ログに `app.budget` として残す |
 
 1 つのセッションは 1 つの Durable Object です。会話履歴とワークスペースのファイルはその SQLite に保存されるので、Durable Object がメモリから消えても続きから答えます。
 

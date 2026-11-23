@@ -16,11 +16,13 @@ import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { Extension } from "@earendil-works/pi-durable";
+import { RUN_BUDGET, type BudgetLimits } from "../domain/budget";
 import type { AgentEvent } from "../domain/event";
 import { piLogSource, readLog } from "../infra/pi/read-log";
 import type { LogQuery, SessionLog } from "../domain/session-log";
 import { runEvent } from "../infra/pi/run-event";
 import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
+import { BUDGET_ENTRY, createBudgetExtension } from "../infra/pi/extensions/budget";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
 import { createTestsExtension, type CommandResult } from "../infra/pi/extensions/tests";
@@ -87,11 +89,13 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   readonly #commands: { argv: string[]; cwd: string }[] = [];
   #commandResult: CommandResult = { exitCode: 0, stdout: "", stderr: "" };
   #clock = 0;
+  #budget: BudgetLimits = RUN_BUDGET;
   readonly #extensions: Extension[] = [
     createWorkspaceExtension(this.workspace),
     createGitExtension(this.workspace),
     createArtifactsExtension(this.workspace, this.#fakeArtifacts(), { pollMs: 1 }),
     createCodemodeExtension(),
+    createBudgetExtension(() => this.#budget),
     createTestsExtension(
       this.workspace,
       async (argv, cwd) => {
@@ -181,6 +185,23 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     const result = await tool.execute(args as never, {} as never, {} as never);
     const text = (result.output ?? []).map((part) => ("text" in part ? part.text : "")).join("");
     return { text, isError: result.isError === true };
+  }
+
+  async budgetStops(): Promise<string[]> {
+    const { entries } = await readLog(piLogSource(this.harness), { after: 0, limit: 200 });
+    return entries.flatMap((entry) =>
+      entry.kind === BUDGET_ENTRY &&
+      typeof entry.data === "object" &&
+      entry.data !== null &&
+      "reason" in entry.data &&
+      typeof entry.data.reason === "string"
+        ? [entry.data.reason]
+        : [],
+    );
+  }
+
+  setBudget(limits: Partial<BudgetLimits>): void {
+    this.#budget = { ...RUN_BUDGET, ...limits };
   }
 
   setCommandResult(result: CommandResult): void {
