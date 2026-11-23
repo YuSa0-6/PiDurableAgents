@@ -11,7 +11,7 @@ import {
   type TestRun,
 } from "../../../domain/test-run";
 import { workspacePath } from "../../../domain/workspace-path";
-import { fail, guarded, ok } from "./git";
+import { fail, guarded, ok } from "./tool-result";
 
 export type CommandResult = Omit<TestRun, "elapsedMs">;
 

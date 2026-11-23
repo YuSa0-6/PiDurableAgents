@@ -12,7 +12,7 @@ import { artifactsSessionId } from "../domain/artifacts-session-id";
 import type { AgentEvent, EventResult } from "../domain/event";
 import type { SharedRepo } from "../domain/shared-repo";
 import type { Sandbox } from "./sandbox";
-import { EventSession } from "../infra/pi/event-session";
+import { runEvent } from "../infra/pi/run-event";
 import { shareRepos } from "../infra/pi/share-repos";
 import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
 import { createArtifactsExtension } from "../infra/pi/extensions/artifacts";
@@ -83,7 +83,7 @@ export class PiAgent extends DurableObject<Env> {
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
   async handleEvent(event: AgentEvent, wait = true): Promise<EventResult> {
-    return EventSession.run(this.harness.session(), event, wait);
+    return runEvent(this.harness.session(), event, wait);
   }
 
   async shareRepos(): Promise<SharedRepo[]> {
