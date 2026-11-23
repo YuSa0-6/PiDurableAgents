@@ -20,8 +20,8 @@
     "test": "vp test run --config src/tests/vitest.config.ts",
     "check": "vp check",
     "prepare": "vp hooks enable",
-    "verify:secrets": "sh scripts/verify/secrets.sh all",
-    "verify:workflows": "sh scripts/verify/workflows.sh",
+    "verify:secrets": "bun scripts/verify/secrets.ts all",
+    "verify:workflows": "bun scripts/verify/workflows.ts",
     "verify:dead-code": "fallow audit --base origin/main",
     "mutation": "stryker run"
   },

@@ -12,7 +12,7 @@ export default defineConfig({
       typeCheck: true,
     },
     plugins: ["typescript", "import"],
-    jsPlugins: ["./lint/clean-architecture.js"],
+    jsPlugins: ["./lint/clean-architecture.ts"],
     rules: {
       "clean-architecture/dependency-rule": "error",
       "clean-architecture/ports-are-types": "error",
