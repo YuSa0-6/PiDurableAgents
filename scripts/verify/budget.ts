@@ -55,6 +55,10 @@ function withMutant(mutant: Mutant): "caught" | "missed" | "stale" {
 }
 
 if (process.argv.includes("--mutants")) {
+  if (!run(CHECK).ok) {
+    console.log("the unchanged code fails the check, so the mutants cannot be judged");
+    finish(false);
+  }
   const results = MUTANTS.map((mutant) => {
     const result = withMutant(mutant);
     console.log(`${result}\t${mutant.name}`);

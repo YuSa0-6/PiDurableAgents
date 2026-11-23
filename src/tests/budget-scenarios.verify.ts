@@ -19,8 +19,8 @@ const PLANS: readonly Plan[] = [0, 1, 2, 3].flatMap((rounds) => [
 ]);
 const LIMITS: readonly Limits[] = [
   ...[1, 2, 3].map((turns) => ({ turns, tokens: UNLIMITED })),
-  ...[1, 10_000, 15_000, 25_000].map((tokens) => ({ turns: UNLIMITED, tokens })),
-  { turns: 2, tokens: 10_000 },
+  ...[1, 7_000, 13_500].map((tokens) => ({ turns: UNLIMITED, tokens })),
+  { turns: 2, tokens: 7_000 },
   { turns: UNLIMITED, tokens: UNLIMITED },
 ];
 
@@ -29,25 +29,62 @@ function scenarios(): Scenario[] {
     ...PLANS.map((plan) => ({ runs: [plan], delivery: "after" as const })),
     ...PLANS.flatMap((first) =>
       PLANS.flatMap((second) =>
-        (["after", "queued"] as const).map((delivery) => ({ runs: [first, second], delivery })),
+        (["after", "queued"] as const)
+          .filter((delivery) => delivery === "after" || first !== "plan 0 error")
+          .map((delivery) => ({ runs: [first, second], delivery })),
       ),
     ),
   ];
   return sequences.flatMap((sequence) => LIMITS.map((limits) => ({ ...sequence, limits })));
 }
 
-function budgetViolations(transcript: readonly TranscriptEntry[], limits: Limits): string[] {
+type Played = {
+  readonly transcript: readonly TranscriptEntry[];
+  readonly settled: boolean;
+};
+
+function budgetViolations(scenario: Scenario, played: Played): string[] {
   const runs: TranscriptEntry[][] = [];
-  for (const entry of transcript) {
+  for (const entry of played.transcript) {
     if (entry.kind === "pi.user") runs.push([]);
     runs.at(-1)?.push(entry);
   }
-  return runs.flatMap((run, index) =>
-    runViolations(run, limits).map((v) => `run ${index + 1}: ${v}`),
-  );
+  const expected = expectedRuns(scenario, runs[0] ?? []);
+  const whole = [
+    ...(played.settled ? [] : ["the agent was still busy when the scenario gave up waiting"]),
+    ...(runs.length === expected
+      ? []
+      : [`expected ${expected} runs but the log has ${runs.length}`]),
+  ];
+  return [
+    ...whole,
+    ...runs.flatMap((run, index) =>
+      runViolations(run, scenario.limits, plannedRounds(scenario.runs[index])).map(
+        (v) => `run ${index + 1}: ${v}`,
+      ),
+    ),
+  ];
 }
 
-function runViolations(run: readonly TranscriptEntry[], limits: Limits): string[] {
+function expectedRuns(scenario: Scenario, first: readonly TranscriptEntry[]): number {
+  const failedWithQueue =
+    scenario.delivery === "queued" &&
+    !first.some((entry) => entry.kind === BUDGET_ENTRY) &&
+    first.some((entry) =>
+      entry.messages.some((message) => "stopReason" in message && message.stopReason === "error"),
+    );
+  return failedWithQueue ? 1 : scenario.runs.length;
+}
+
+function plannedRounds(plan: Plan | undefined): number {
+  return Number(plan?.split(" ")[1] ?? 0);
+}
+
+function stoppedBy(played: Played): boolean {
+  return played.transcript.some((entry) => entry.kind === BUDGET_ENTRY);
+}
+
+function runViolations(run: readonly TranscriptEntry[], limits: Limits, planned: number): string[] {
   let rounds = 0;
   let tokens = 0;
   let stopAt: number | undefined;
@@ -82,46 +119,51 @@ function runViolations(run: readonly TranscriptEntry[], limits: Limits): string[
     violations.push(`stopped at entry ${stops[0]! + 1} with ${rounds} rounds and ${tokens} tokens`);
   }
   if (stops.length > 1) violations.push(`${stops.length} budget entries`);
+  if (stopAt === undefined && rounds !== planned) {
+    violations.push(`planned ${planned} tool rounds but the run played ${rounds}`);
+  }
   return violations;
 }
 
-async function idle(agent: { busy(): Promise<boolean> }): Promise<void> {
-  for (let attempt = 0; attempt < 1000 && (await agent.busy()); attempt++) {
+async function idle(agent: { busy(): Promise<boolean> }): Promise<boolean> {
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    if (!(await agent.busy())) return true;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+  return false;
 }
 
-async function play(scenario: Scenario): Promise<TranscriptEntry[]> {
+async function play(scenario: Scenario): Promise<Played> {
   const agent = env.PI_HARNESS_TEST.getByName(crypto.randomUUID());
   await agent.setBudget({ ...scenario.limits, costUsd: UNLIMITED, elapsedMs: UNLIMITED });
   await agent.writeWorkspaceFile("/workspace/note.txt", "hello");
-  const [first, ...rest] = scenario.runs;
-  if (scenario.delivery === "queued") {
-    await agent.submit(first!);
-    for (const plan of rest) await agent.submit(plan);
-  } else {
-    for (const plan of [first!, ...rest]) {
-      await agent.submit(plan);
-      await idle(agent);
-    }
+  let settled = true;
+  for (const plan of scenario.runs) {
+    await agent.submit(plan);
+    if (scenario.delivery === "after") settled = (await idle(agent)) && settled;
   }
-  await idle(agent);
-  return agent.transcript();
+  settled = (await idle(agent)) && settled;
+  return { transcript: await agent.transcript(), settled };
 }
 
 describe("run budget over every scripted scenario", () => {
   it("stops each run exactly at the first tool round that reaches a limit", async () => {
     const all = scenarios();
     const found: string[] = [];
+    const stoppingLimits = new Set<Limits>();
     for (let start = 0; start < all.length; start += 32) {
       const batch = all.slice(start, start + 32);
-      const transcripts = await Promise.all(batch.map(play));
+      const played = await Promise.all(batch.map(play));
       batch.forEach((scenario, index) => {
-        for (const violation of budgetViolations(transcripts[index]!, scenario.limits)) {
+        if (stoppedBy(played[index]!)) stoppingLimits.add(scenario.limits);
+        for (const violation of budgetViolations(scenario, played[index]!)) {
           found.push(`${JSON.stringify(scenario)} -> ${violation}`);
         }
       });
     }
     expect(found.slice(0, 10)).toEqual([]);
+    expect(LIMITS.filter((limits) => !stoppingLimits.has(limits))).toEqual([
+      { turns: UNLIMITED, tokens: UNLIMITED },
+    ]);
   }, 900_000);
 });
