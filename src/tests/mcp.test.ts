@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
-import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
+import { waitOnExecutionContext } from "cloudflare:test";
+import { agentContext } from "./agent-context";
 import { describe, expect, it } from "vite-plus/test";
 import worker from "../application/worker";
 import { accountId, activeToken, stubAccountTokenVerify } from "./account-token";
@@ -10,10 +11,7 @@ type WorkerRequest = Parameters<typeof worker.fetch>[0];
 stubAccountTokenVerify();
 
 function bound(): Env {
-  return {
-    ACCOUNT_ID: accountId,
-    PiAgent: env.PI_HARNESS_TEST,
-  } as unknown as Env;
+  return { ACCOUNT_ID: accountId } as unknown as Env;
 }
 
 function rpc(method: string, params: unknown, id = 1): string {
@@ -21,7 +19,7 @@ function rpc(method: string, params: unknown, id = 1): string {
 }
 
 async function post(body: string, headers: Record<string, string> = {}) {
-  const ctx = createExecutionContext();
+  const ctx = agentContext();
   const response = await worker.fetch(
     new Request("https://mcp.d1agents.test/mcp", {
       method: "POST",
@@ -106,7 +104,7 @@ describe("MCP", () => {
     const wrong = await post(initialize, { authorization: "Bearer wrong" });
     expect(wrong.response.status).toBe(401);
 
-    const ctx = createExecutionContext();
+    const ctx = agentContext();
     const preflight = await worker.fetch(
       new Request("https://mcp.d1agents.test/mcp", { method: "OPTIONS" }) as WorkerRequest,
       bound(),
@@ -141,7 +139,7 @@ describe("MCP", () => {
 
   it("keeps HTTP events on the http source", async () => {
     const session = `http-${crypto.randomUUID()}`;
-    const ctx = createExecutionContext();
+    const ctx = agentContext();
     const response = await worker.fetch(
       new Request("http://localhost/api/events", {
         method: "POST",

@@ -12,7 +12,7 @@ import { sendEvent } from "../../usecase/send-event";
 export const app = new Hono<{ Bindings: Env; Variables: { app: App } }>();
 
 app.use("/api/*", async (c, next) => {
-  const deps = compose(c.env);
+  const deps = compose(c.env, c.executionCtx.exports);
   const denied = await requireBearer(c.req.raw, deps.auth);
   if (denied) return denied;
   c.set("app", deps);
