@@ -40,7 +40,7 @@ function passed(body: string): boolean {
 }
 
 function hintFor(status: number): string {
-  if (status === 302) {
+  if ((status >= 300 && status < 400) || status === 403) {
     return "Cloudflare Access に止められています。CF_ACCESS_CLIENT_ID と CF_ACCESS_CLIENT_SECRET を確かめてください。";
   }
   if (status === 401) return "CLOUDFLARE_ACCOUNT_TOKEN が通りませんでした。";
@@ -66,7 +66,9 @@ const response = await fetch(`${baseUrl}/api/events`, {
   signal: AbortSignal.timeout(TIMEOUT_MS),
 }).catch((error: unknown) => fail(`Worker に届きませんでした: ${String(error)}`));
 
-const body = await response.text();
+const body = await response
+  .text()
+  .catch((error: unknown) => fail(`返事を読み切れませんでした: ${String(error)}`));
 console.log(`HTTP ${response.status}`);
 console.log(body);
 
