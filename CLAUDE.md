@@ -47,4 +47,3 @@
 git フック(`.vite-hooks/`)、Claude Code のフック(`.claude/settings.json`)、CI(`.github/workflows/`)が自動で動きます。置き場所の一覧は README の「マージ前の検証」にあります。
 
 - 作業を終えるとき、コードを変えていれば Stop フックが `vp check` とテストを流す。失敗したら直してから終える
-- PR を作る前に実アプリで確かめ、実行したコマンドと結果を `.verify/<HEAD の SHA>.md` に書く。ないと PR 作成のフックが止める
