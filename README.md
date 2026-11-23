@@ -360,7 +360,8 @@ bunx cf deploy --dry-run
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | 流し方       | Actions の `smoke` から **Run workflow**                                                                                             |
 | すること     | 毎回新しいセッションで、`node --test` のテストを 1 つ作らせ、`run_tests` で実行させる                                                |
-| 合格の条件   | 返事に `run test passed with exit code 0` が入っている                                                                               |
+| 合格の条件   | 回答が完了していて、本文に `run test passed with exit code 0` が入っている                                                           |
+| 後片付け     | 流すたびに `smoke-<run id>` のセッション(Durable Object と Artifacts のリポジトリ)が本番に 1 つ残る                                  |
 | シークレット | `CLOUDFLARE_ACCOUNT_TOKEN`(必須)。Worker の前に Cloudflare Access があるときは `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` も |
 
 ログを流して見る機能（`wrangler tail`）は `cf` にまだないので、`bunx wrangler tail d1agents-pi-durable` を使います。

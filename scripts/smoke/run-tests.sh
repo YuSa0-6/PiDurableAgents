@@ -20,7 +20,10 @@ if [ -n "${CF_ACCESS_CLIENT_ID:-}" ]; then
 fi
 
 echo "session: $session"
-response=$(curl -w '\n%{http_code}' "$@" --data "$body")
+response=$(curl -w '\n%{http_code}' "$@" --data "$body") || {
+  echo "Worker に届きませんでした(curl が失敗しました)。" >&2
+  exit 1
+}
 status=$(printf '%s\n' "$response" | tail -n 1)
 reply=$(printf '%s\n' "$response" | sed '$d')
 echo "HTTP $status"
@@ -30,7 +33,7 @@ if [ "$status" != "200" ]; then
   echo "Worker が 200 以外を返しました。" >&2
   exit 1
 fi
-if printf '%s' "$reply" | grep -q 'run test passed with exit code 0'; then
+if printf '%s' "$reply" | jq -e '.result.status == "done" and (.result.text | test("run test passed with exit code 0"))' >/dev/null 2>&1; then
   echo "run_tests はコンテナでテストを通しました。"
   exit 0
 fi
