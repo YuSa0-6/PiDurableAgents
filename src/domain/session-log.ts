@@ -1,7 +1,7 @@
 import { InvalidInput } from "./errors";
 
-export const DEFAULT_LOG_LIMIT = 50;
-export const MAX_LOG_LIMIT = 200;
+const DEFAULT_LOG_LIMIT = 50;
+const MAX_LOG_LIMIT = 200;
 export const MAX_LOG_TEXT = 4000;
 
 export type LogQuery = {
