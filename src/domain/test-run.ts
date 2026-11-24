@@ -14,8 +14,48 @@ const ALLOWED_SCRIPT = /^(test|test:[a-z0-9:_-]+|check|lint|typecheck)$/;
 
 export const ALLOWED_SCRIPTS_TEXT = '"test", "test:<name>", "check", "lint" or "typecheck"';
 
-export function packageManagerFor(files: readonly string[]): PackageManager {
-  return LOCKFILES.find(([lockfile]) => files.includes(lockfile))?.[1] ?? "npm";
+export type Lockfile = {
+  readonly name: string;
+  readonly manager: PackageManager;
+};
+
+export function lockfileIn(files: readonly string[]): Lockfile | undefined {
+  const found = LOCKFILES.find(([lockfile]) => files.includes(lockfile));
+  return found && { name: found[0], manager: found[1] };
+}
+
+export function requireSupportedYarn(files: readonly string[]): void {
+  if (files.includes(".yarnrc.yml")) {
+    throw new Refusal(
+      "Yarn 2 or later (.yarnrc.yml) is not supported. Use Yarn 1, npm, pnpm or bun.",
+    );
+  }
+}
+
+export function parentDirs(dir: string): string[] {
+  const parts = dir.split("/").filter((part) => part.length > 0);
+  const dirs: string[] = [];
+  for (let size = parts.length; size >= 2; size--) dirs.push(`/${parts.slice(0, size).join("/")}`);
+  return dirs;
+}
+
+const INSTALL_COMMANDS: Record<PackageManager, readonly string[]> = {
+  bun: ["bun", "install", "--frozen-lockfile", "--ignore-scripts"],
+  pnpm: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"],
+  yarn: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts", "--non-interactive"],
+  npm: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+};
+
+export const INSTALL_MARKER = "node_modules/.d1agents-lock";
+
+const ENSURE_DEPS_SCRIPT = [
+  `if [ "$(cat ${INSTALL_MARKER} 2>/dev/null)" = "$1" ]; then echo "Dependencies are up to date."; exit 0; fi`,
+  'stamp="$1"; shift',
+  `"$@" && mkdir -p node_modules && echo "$stamp" > ${INSTALL_MARKER}`,
+].join("\n");
+
+export function ensureDepsCommand(manager: PackageManager, stamp: string): string[] {
+  return ["sh", "-c", ENSURE_DEPS_SCRIPT, "sh", stamp, ...INSTALL_COMMANDS[manager]];
 }
 
 export function requireTestScript(script: string, declared: readonly string[]): string {

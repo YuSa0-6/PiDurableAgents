@@ -88,6 +88,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   readonly #artifactsCalls: string[] = [];
   readonly #commands: { argv: string[]; cwd: string }[] = [];
   #commandResult: CommandResult = { exitCode: 0, stdout: "", stderr: "" };
+  #queuedResults: CommandResult[] = [];
   #clock = 0;
   #budget: BudgetLimits = RUN_BUDGET;
   readonly #extensions: Extension[] = [
@@ -100,7 +101,7 @@ export class PiHarnessTestObject extends DurableObject<Env> {
       this.workspace,
       async (argv, cwd) => {
         this.#commands.push({ argv, cwd });
-        return this.#commandResult;
+        return this.#queuedResults.shift() ?? this.#commandResult;
       },
       () => (this.#clock += 1500),
     ),
@@ -206,6 +207,10 @@ export class PiHarnessTestObject extends DurableObject<Env> {
 
   setCommandResult(result: CommandResult): void {
     this.#commandResult = result;
+  }
+
+  queueCommandResults(results: CommandResult[]): void {
+    this.#queuedResults.push(...results);
   }
 
   commands(): { argv: string[]; cwd: string }[] {
