@@ -1,6 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  "entry": ["cloudflare.config.ts", "scripts/hooks/*.ts", ".claude/hooks/*.ts"],
+  "entry": [
+    "cloudflare.config.ts",
+    "scripts/hooks/*.ts",
+    ".claude/hooks/*.ts",
+    "src/tests/vitest.verify.config.ts",
+    "src/tests/*.verify.ts",
+    "scripts/verify/*.ts"
+  ],
   "ignorePatterns": ["!.claude/**"],
   "usedClassMembers": [
     {

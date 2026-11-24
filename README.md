@@ -292,6 +292,7 @@ git フックは `bun scripts/hooks/*.ts` を呼ぶので、コミットする�
 | 秘密情報を全履歴で調べる          | `bun run verify:secrets`                     |
 | GitHub Actions を調べる           | `bun run verify:workflows`                   |
 | main との差分の未使用コードを見る | `bun run verify:dead-code`                   |
+| 予算上限を全パターンで確かめる    | `bun run verify:budget`                      |
 | ミューテーションテスト            | `bun run mutation -- --mutate src/router.ts` |
 | フックを一度だけ飛ばす            | `VP_GIT_HOOKS=0 git commit ...`              |
 
