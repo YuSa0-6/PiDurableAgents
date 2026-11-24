@@ -20,7 +20,11 @@ describe("RegistryEgress", () => {
     });
     const response = await egress().fetch(
       new Request("http://registry.npmjs.org/react?write=true", {
-        headers: { accept: "application/json", authorization: "Bearer leak", cookie: "a=b" },
+        headers: {
+          accept: "application/json",
+          authorization: "Bearer from-the-container",
+          cookie: "a=b",
+        },
       }),
     );
     expect(response.status).toBe(200);

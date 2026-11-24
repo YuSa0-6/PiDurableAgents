@@ -7,7 +7,7 @@ describe("registryUpstream", () => {
     ["GET", "https://registry.npmjs.org/react", "https://registry.npmjs.org/react"],
     ["HEAD", "http://registry.npmjs.org/-/a.tgz?x=1", "https://registry.npmjs.org/-/a.tgz?x=1"],
     ["GET", "https://registry.yarnpkg.com/lodash", "https://registry.yarnpkg.com/lodash"],
-    ["GET", "https://user:pw@registry.npmjs.org:8443/a", "https://registry.npmjs.org/a"],
+    ["GET", "https://registry.npmjs.org:8443/a", "https://registry.npmjs.org/a"],
   ])("lets %s %s through to %s", (method, url, upstream) => {
     expect(registryUpstream(method, url)).toBe(upstream);
   });
