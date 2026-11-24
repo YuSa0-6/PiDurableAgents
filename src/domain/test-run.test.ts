@@ -2,23 +2,65 @@ import { describe, expect, it } from "vite-plus/test";
 import { Refusal } from "./errors";
 import {
   describeTestRun,
-  packageManagerFor,
+  ensureDepsCommand,
+  lockfileIn,
+  parentDirs,
+  requireSupportedYarn,
   requireTestScript,
   scriptsOf,
   tail,
   testCommand,
 } from "./test-run";
 
-describe("packageManagerFor", () => {
+describe("lockfileIn", () => {
   it.each([
-    [["bun.lock", "package.json"], "bun"],
-    [["bun.lockb"], "bun"],
-    [["pnpm-lock.yaml"], "pnpm"],
-    [["yarn.lock"], "yarn"],
-    [["package-lock.json"], "npm"],
-    [["package.json"], "npm"],
-  ] as const)("picks the manager from %j", (files, manager) => {
-    expect(packageManagerFor(files)).toBe(manager);
+    [["bun.lock", "package.json"], "bun.lock", "bun"],
+    [["bun.lockb"], "bun.lockb", "bun"],
+    [["pnpm-lock.yaml"], "pnpm-lock.yaml", "pnpm"],
+    [["yarn.lock"], "yarn.lock", "yarn"],
+    [["package-lock.json"], "package-lock.json", "npm"],
+  ] as const)("finds the lockfile and its manager in %j", (files, name, manager) => {
+    expect(lockfileIn(files)).toEqual({ name, manager });
+  });
+
+  it("finds nothing without a lockfile", () => {
+    expect(lockfileIn(["package.json"])).toBeUndefined();
+  });
+});
+
+describe("requireSupportedYarn", () => {
+  it("refuses Yarn 2 or later and lets the rest through", () => {
+    expect(() => requireSupportedYarn(["yarn.lock", ".yarnrc.yml"])).toThrow(Refusal);
+    expect(() => requireSupportedYarn(["yarn.lock"])).not.toThrow();
+  });
+});
+
+describe("parentDirs", () => {
+  it("lists the directory and its parents down to the top folder under /workspace", () => {
+    expect(parentDirs("/workspace/repo/packages/app")).toEqual([
+      "/workspace/repo/packages/app",
+      "/workspace/repo/packages",
+      "/workspace/repo",
+    ]);
+    expect(parentDirs("/workspace/repo")).toEqual(["/workspace/repo"]);
+  });
+});
+
+describe("ensureDepsCommand", () => {
+  it("runs the frozen install without scripts unless the marker matches the stamp", () => {
+    const [shell, flag, script, name, stamp, ...install] = ensureDepsCommand("pnpm", "abc");
+    expect([shell, flag, name, stamp]).toEqual(["sh", "-c", "sh", "abc"]);
+    expect(script).toContain(
+      'mkdir -p node_modules && echo "$stamp" > node_modules/.d1agents-lock',
+    );
+    expect(install).toEqual(["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"]);
+    expect(ensureDepsCommand("npm", "abc").slice(5)).toEqual([
+      "npm",
+      "ci",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+    ]);
   });
 });
 

@@ -2,5 +2,6 @@
 useDefault = true
 
 [allowlist]
-description = "lockfiles hold package names such as @inquirer/password, not secrets"
+description = "lockfiles hold package names such as @inquirer/password, not secrets; 251778c had a made-up user:pw URL in a test"
 paths = ['''(^|/)bun\.lock$''', '''(^|/)pnpm-lock\.yaml$''']
+commits = ['''251778c789d8f244cb5dcebdce11d6468a112634''']

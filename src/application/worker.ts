@@ -2,6 +2,7 @@ import { AgentMcp } from "./mcp/server";
 import { app } from "./http/router";
 
 export { PiAgent } from "./pi-agent";
+export { RegistryEgress } from "./registry-egress";
 export { Sandbox } from "./sandbox";
 
 export default {

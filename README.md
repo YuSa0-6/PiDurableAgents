@@ -184,15 +184,16 @@ Pi Durable の Code Mode（`src/infra/pi/extensions/codemode.ts`）を入れて�
 
 `run_tests` は、リポジトリの package.json にあるテスト用スクリプトを Linux コンテナで実行し、終了コードと出力の末尾を返します。エージェントの考える部分(Pi のループとモデル呼び出し)は `PiAgent` に残り、コンテナはコマンドを実行するだけです。
 
-| 項目                   | 中身                                                                                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 実行できるもの         | `test`・`test:<名前>`・`check`・`lint`・`typecheck` のうち、package.json に書かれているもの。`[パッケージマネージャー, "run", 名前]` をシェルを通さずに実行 |
-| パッケージマネージャー | ロックファイルで決める(`bun.lock` → bun、`pnpm-lock.yaml` → pnpm、`yarn.lock` → yarn、それ以外 → npm)                                                       |
-| コンテナ               | `Sandbox` Durable Object(`src/application/sandbox.ts`)が持つ Cloudflare Container。セッションごとに 1 つ、最後のコマンドから 2 分で止まる                   |
-| イメージ               | `sandbox/Dockerfile`(Node.js 22、npm、pnpm、yarn、bun、git、`@cloudflare/computer` の `remote-exec`)。サイズは `basic`、最大 3 台                           |
-| ファイル               | コマンドの前に、`/workspace` のファイルを `node_modules` と `.git` を除いてコンテナへ送る(`@cloudflare/computer/remote-exec`)。コンテナの変更は戻さない     |
-| ネットワーク           | なし(`enableInternet: false`)。依存のインストールはまだできないので、依存のないテストだけが通る                                                             |
-| 渡さないもの           | モデルのキー、Artifacts のトークン、API トークン。Dockerfile にも秘密は書かない                                                                             |
+| 項目                   | 中身                                                                                                                                                                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 実行できるもの         | `test`・`test:<名前>`・`check`・`lint`・`typecheck` のうち、package.json に書かれているもの。`[パッケージマネージャー, "run", 名前]` をシェルを通さずに実行                                                                                                           |
+| パッケージマネージャー | `dir` から親へたどって最初に見つかったロックファイルで決める(`bun.lock` → bun、`pnpm-lock.yaml` → pnpm、`yarn.lock` → Yarn 1、`package-lock.json` → npm)。ないときは npm。Yarn 2 以降(`.yarnrc.yml`)は断る                                                            |
+| 依存の導入             | スクリプトの前に、ロックファイルのある場所で固定のインストール(`--frozen-lockfile` / `npm ci`)を `--ignore-scripts` 付きで実行する。ロックファイルと package.json のハッシュを `node_modules/.d1agents-lock` に残し、同じなら飛ばす。ロックファイルがなければ入れない |
+| コンテナ               | `Sandbox` Durable Object(`src/application/sandbox.ts`)が持つ Cloudflare Container。セッションごとに 1 つ、最後のコマンドから 5 分で止まる                                                                                                                             |
+| イメージ               | `sandbox/Dockerfile`(Node.js 22、npm、pnpm、yarn、bun、git、`@cloudflare/computer` の `remote-exec`)。サイズは `basic`、最大 3 台                                                                                                                                     |
+| ファイル               | コマンドの前に、`/workspace` のファイルを `node_modules` と `.git` を除いてコンテナへ送る(`@cloudflare/computer/remote-exec`)。コンテナの変更は戻さない                                                                                                               |
+| ネットワーク           | `registry.npmjs.org` と `registry.yarnpkg.com` の読み取り(GET・HEAD)だけ。コンテナの HTTP と HTTPS はすべて Worker の `RegistryEgress`(`src/application/registry-egress.ts`)を通り、それ以外の宛先と書き込みは 403。認証ヘッダーは外へ送らない                        |
+| 渡さないもの           | モデルのキー、Artifacts のトークン、API トークン。Dockerfile にも秘密は書かない                                                                                                                                                                                       |
 
 `remote-exec` の版は `@cloudflare/computer` と合わせます。`@cloudflare/computer` を上げたら、`sandbox/Dockerfile` の `computer-remote-exec` のタグも同じ版にします。
 
@@ -317,14 +318,14 @@ claude plugin marketplace update yomiyasu-mini && claude plugin update yomiyasu-
 
 テストは Workers ランタイムで動きます（設定は `src/tests/vitest.config.ts`）。`src/tests/worker.ts` は本番と同じ Pi Durable + Workspace の組み合わせを、pi-ai の faux モデルで動かすテスト用の Durable Object です。
 
-| テスト              | 確かめること                                                                                                                                                                                                                         |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `durable.test.ts`   | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること                                                                                                                 |
-| `mcp.test.ts`       | MCP の initialize と tools/list、ツール呼び出しがエージェントまで届くこと（会話ログの `source` は `mcp`）、有効なアカウント API トークンがないときの 401（Cloudflare API の確認は偽物で代用）                                        |
-| `git.test.ts`       | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること                                                                                                                   |
-| `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた） |
-| `codemode.test.ts`  | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること                                                                                          |
-| `tests.test.ts`     | `run_tests` がロックファイルに合うパッケージマネージャーでスクリプトを実行し、失敗をエラーとして返すこと。テスト用以外のスクリプト、package.json にないスクリプト、`/workspace` の外を断ること(コンテナは偽物で代用)                 |
+| テスト              | 確かめること                                                                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `durable.test.ts`   | Durable Object を退避（evict）しても、ワークスペースとセッションが続くこと。Workspace ツールの結果がモデルに渡ること                                                                                                                                         |
+| `mcp.test.ts`       | MCP の initialize と tools/list、ツール呼び出しがエージェントまで届くこと（会話ログの `source` は `mcp`）、有効なアカウント API トークンがないときの 401（Cloudflare API の確認は偽物で代用）                                                                |
+| `git.test.ts`       | パスを `/workspace` の中に限ること、`agent/` のブランチを作り commit できること、`agent/` 以外のブランチを断ること                                                                                                                                           |
+| `artifacts.test.ts` | リポジトリの作成・取り込み（読めるようになるまで待つ）・一覧、`agent/` 以外の push とおかしな名前やパスを断ること、トークンを毎回取り消して出力に出さないこと（Artifacts は偽物で代用。実際の clone と push は `cf dev` で確かめた）                         |
+| `codemode.test.ts`  | Code Mode のスクリプトから複数のツールを呼べること、push の決まりがスクリプトからの呼び出しにも効くこと、計算し続けるスクリプトが止まること                                                                                                                  |
+| `tests.test.ts`     | `run_tests` がロックファイルの場所で依存を入れてから、ロックファイルに合うパッケージマネージャーでスクリプトを実行し、失敗をエラーとして返すこと。テスト用以外のスクリプト、package.json にないスクリプト、`/workspace` の外を断ること(コンテナは偽物で代用) |
 
 ## ローカルで動かす
 
