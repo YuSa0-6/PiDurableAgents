@@ -77,5 +77,5 @@ TypeScript のコードと pi-durable の内部にそのままかけられる検
 | 前提           | `@earendil-works/pi-durable` 1.6 の `startRun`・`run.turns`・`run.first`、`afterTools` の `terminate` が final 境界で run を終えること(`dist/harness/generation.js`) |
 | 台本と記録     | `src/tests/worker.ts` の `planned`、`transcript`、`submit`、`busy`                                                                                                   |
 
-- 同期コミット:46f380a4d8d594dec526053320d2f0b2413fe167(PR #44 の予算上限のコミット)
+- 同期コミット:8ac54d0302fd24140f3e7fa2614efe714045b7ca(PR #44 のマージ)
 - 対象のコードが変わったら、上の手順で検査が今のコードを表していると確かめてから、同期コミットを進める。確かめていないのに進めない
