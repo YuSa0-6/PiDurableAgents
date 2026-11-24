@@ -26,10 +26,6 @@ export default defineConfig({
     env: {
       ACCOUNT_ID: bindings.text("7beca1669580a2216d1e5b0bc3c346f8"),
       AI_GATEWAY_ID: bindings.text("d1agents"),
-      PiAgent: bindings.durableObject({
-        worker: "d1agents-pi-durable",
-        exportName: "PiAgent",
-      }),
       AI: bindings.ai({
         dev: {
           remote: true,

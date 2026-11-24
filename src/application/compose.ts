@@ -16,9 +16,9 @@ export type App = {
   readonly model: string;
 };
 
-export function compose(env: Env): App {
+export function compose(env: Env, exports: Cloudflare.Exports): App {
   return {
-    agents: new DurableAgentGateway(env.PiAgent as unknown as DurableObjectNamespace<PiAgent>),
+    agents: new DurableAgentGateway(exports.PiAgent as unknown as DurableObjectNamespace<PiAgent>),
     auth: new CloudflareAccountToken(env.ACCOUNT_ID),
     clock: systemClock,
     ids: randomIds,

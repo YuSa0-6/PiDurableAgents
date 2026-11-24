@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
-import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
+import { waitOnExecutionContext } from "cloudflare:test";
+import { agentContext } from "./agent-context";
 import { describe, expect, it } from "vite-plus/test";
 import worker from "../application/worker";
 import { accountId, activeToken, disabledToken, stubAccountTokenVerify } from "./account-token";
@@ -12,11 +13,11 @@ const auth = { authorization: `Bearer ${activeToken}` };
 stubAccountTokenVerify();
 
 function bound(): Env {
-  return { ACCOUNT_ID: accountId, PiAgent: env.PI_HARNESS_TEST } as unknown as Env;
+  return { ACCOUNT_ID: accountId } as unknown as Env;
 }
 
 async function call(path: string, init: RequestInit = {}) {
-  const ctx = createExecutionContext();
+  const ctx = agentContext();
   const response = await worker.fetch(
     new Request(`https://agent.d1agents.test${path}`, init) as WorkerRequest,
     bound(),
