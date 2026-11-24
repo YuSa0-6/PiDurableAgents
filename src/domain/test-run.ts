@@ -46,7 +46,7 @@ const INSTALL_COMMANDS: Record<PackageManager, readonly string[]> = {
   npm: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
 };
 
-export const INSTALL_MARKER = "node_modules/.d1agents-lock";
+const INSTALL_MARKER = "node_modules/.d1agents-lock";
 
 const ENSURE_DEPS_SCRIPT = [
   `if [ "$(cat ${INSTALL_MARKER} 2>/dev/null)" = "$1" ]; then echo "Dependencies are up to date."; exit 0; fi`,
