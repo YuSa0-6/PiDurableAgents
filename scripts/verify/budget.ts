@@ -9,6 +9,20 @@ type Mutant = {
 };
 
 const CHECK = ["bunx", "vp", "test", "run", "--config", "src/tests/vitest.verify.config.ts"];
+const UNIT_CHECK = [
+  "bunx",
+  "vp",
+  "test",
+  "run",
+  "--config",
+  "src/tests/vitest.config.ts",
+  "src/domain/budget.test.ts",
+  "src/tests/budget.test.ts",
+];
+
+function checksPass(quiet: boolean): boolean {
+  return run(UNIT_CHECK, { quiet }).ok && run(CHECK, { quiet }).ok;
+}
 
 const MUTANTS: readonly Mutant[] = [
   {
@@ -36,6 +50,30 @@ const MUTANTS: readonly Mutant[] = [
     to: "usage.tokens = message.usage.totalTokens;",
   },
   {
+    name: "the daily session budget is never checked",
+    file: "src/infra/pi/extensions/budget.ts",
+    from: "overDailyBudget(await todaysSpend(api, context), daily())",
+    to: "undefined",
+  },
+  {
+    name: "yesterday's spend counts toward today",
+    file: "src/domain/budget.ts",
+    from: ".filter((spend) => spend.at >= dayStart)",
+    to: ".filter(() => true)",
+  },
+  {
+    name: "an unreadable budget lets the run go on",
+    file: "src/infra/pi/extensions/budget.ts",
+    from: "return BUDGET_UNREADABLE;",
+    to: "return undefined;",
+  },
+  {
+    name: "events queued behind a failed run wait for the next event",
+    file: "src/infra/pi/harness-settings.ts",
+    from: '"continue"',
+    to: '"keep"',
+  },
+  {
     name: "a limit is reached only when passed",
     file: "src/domain/budget.ts",
     from: "usage[key] >= limits[key]",
@@ -48,14 +86,14 @@ function withMutant(mutant: Mutant): "caught" | "missed" | "stale" {
   if (original.split(mutant.from).length !== 2) return "stale";
   writeFileSync(mutant.file, original.replace(mutant.from, mutant.to));
   try {
-    return run(CHECK, { quiet: true }).ok ? "missed" : "caught";
+    return checksPass(true) ? "missed" : "caught";
   } finally {
     writeFileSync(mutant.file, original);
   }
 }
 
 if (process.argv.includes("--mutants")) {
-  if (!run(CHECK).ok) {
+  if (!checksPass(false)) {
     console.log("the unchanged code fails the check, so the mutants cannot be judged");
     finish(false);
   }

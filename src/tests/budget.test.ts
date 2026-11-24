@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vite-plus/test";
+import { BUDGET_UNREADABLE } from "../domain/budget";
 
 async function readFileWithBudget(budget: Record<string, number>) {
   const agent = env.PI_HARNESS_TEST.getByName(crypto.randomUUID());
@@ -34,5 +35,14 @@ describe("run budget", () => {
     expect(stops).toEqual([
       expect.stringMatching(/^Run budget reached: elapsed milliseconds \d+ of 1\.$/),
     ]);
+  });
+
+  it("stops the run when the budget cannot be read", async () => {
+    const agent = env.PI_HARNESS_TEST.getByName(crypto.randomUUID());
+    await agent.makeBudgetUnreadable();
+    await agent.writeWorkspaceFile("/workspace/note.txt", "hello");
+    const result = await agent.prompt("read /workspace/note.txt");
+    expect(result.text ?? "").not.toMatch(/tool said/);
+    expect(await agent.budgetStops()).toEqual([BUDGET_UNREADABLE]);
   });
 });

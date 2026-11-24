@@ -11,7 +11,18 @@ import {
   type HookApi,
 } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
-import { overBudget, type BudgetLimits, type RunUsage } from "../../../domain/budget";
+import {
+  BUDGET_UNREADABLE,
+  japanDayStart,
+  overBudget,
+  overDailyBudget,
+  spendSince,
+  type BudgetLimits,
+  type DailyLimits,
+  type RunUsage,
+  type Spend,
+  type TimedSpend,
+} from "../../../domain/budget";
 
 export const BUDGET_ENTRY = "app.budget";
 
@@ -38,19 +49,38 @@ const BudgetStop = defineTask<{ readonly reason: string }, { phase: "stop" }, Af
     runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context),
 });
 
-export function createBudgetExtension(limits: () => BudgetLimits): Extension {
+export function createBudgetExtension(
+  limits: () => BudgetLimits,
+  daily: () => DailyLimits,
+): Extension {
   return {
     name: "budget",
     tasks: [BudgetStop],
     hooks: [
       hook(GenerationTask, {
         afterTools: async (_assistant, _results, api, context) => {
-          const reason = overBudget(await runUsage(api, context), limits());
+          const reason = await budgetVerdict(api, context, limits, daily);
           return reason ? { tasks: [hookTask(BudgetStop, { reason })] } : undefined;
         },
       }),
     ],
   };
+}
+
+async function budgetVerdict(
+  api: HookApi,
+  context: Context,
+  limits: () => BudgetLimits,
+  daily: () => DailyLimits,
+): Promise<string | undefined> {
+  try {
+    return (
+      overBudget(await runUsage(api, context), limits()) ??
+      overDailyBudget(await todaysSpend(api, context), daily())
+    );
+  } catch {
+    return BUDGET_UNREADABLE;
+  }
 }
 
 async function runUsage(api: HookApi, context: Context): Promise<RunUsage> {
@@ -75,6 +105,27 @@ async function runUsage(api: HookApi, context: Context): Promise<RunUsage> {
     cursor = page.next;
   } while (cursor !== undefined);
   return { ...usage, elapsedMs: started === undefined ? 0 : api.now() - started };
+}
+
+async function todaysSpend(api: HookApi, context: Context): Promise<Spend> {
+  const dayStart = japanDayStart(api.now());
+  const spends: TimedSpend[] = [];
+  let cursor: Cursor | undefined;
+  let reachedYesterday = false;
+  do {
+    const page = await api.entries({ order: "descending" }, SCAN_PAGE, cursor, context);
+    for (const message of page.items.flatMap((entry) => entry.model ?? [])) {
+      if (message.timestamp < dayStart) reachedYesterday = true;
+      if (message.role !== "assistant") continue;
+      spends.push({
+        at: message.timestamp,
+        tokens: message.usage.totalTokens,
+        costUsd: message.usage.cost.total,
+      });
+    }
+    cursor = page.next;
+  } while (cursor !== undefined && !reachedYesterday);
+  return spendSince(dayStart, spends);
 }
 
 function timestampOf(message: Message): number | undefined {

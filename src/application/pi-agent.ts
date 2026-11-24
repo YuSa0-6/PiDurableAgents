@@ -9,7 +9,7 @@ import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import { createAI } from "agents/models/pi-ai";
 import { artifactsSessionId } from "../domain/artifacts-session-id";
-import { RUN_BUDGET } from "../domain/budget";
+import { RUN_BUDGET, SESSION_DAILY_BUDGET } from "../domain/budget";
 import type { AgentEvent, EventResult } from "../domain/event";
 import type { SharedRepo } from "../domain/shared-repo";
 import type { Sandbox } from "./sandbox";
@@ -20,6 +20,7 @@ import { shareRepos } from "../infra/pi/share-repos";
 import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
 import { createArtifactsExtension } from "../infra/pi/extensions/artifacts";
 import { createBudgetExtension } from "../infra/pi/extensions/budget";
+import { QUEUE_AFTER_FAILED_RUN } from "../infra/pi/harness-settings";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
 import { createGitExtension } from "../infra/pi/extensions/git";
 import { createTestsExtension } from "../infra/pi/extensions/tests";
@@ -53,7 +54,12 @@ export class PiAgent extends DurableObject<Env> {
       this.registry.install(createGitExtension(this.workspace));
       this.registry.install(createArtifactsExtension(this.workspace, this.workspace.artifacts));
       this.registry.install(createCodemodeExtension());
-      this.registry.install(createBudgetExtension(() => RUN_BUDGET));
+      this.registry.install(
+        createBudgetExtension(
+          () => RUN_BUDGET,
+          () => SESSION_DAILY_BUDGET,
+        ),
+      );
       this.registry.install(
         createTestsExtension(
           this.workspace,
@@ -75,7 +81,8 @@ export class PiAgent extends DurableObject<Env> {
           registry: this.registry,
           onWake,
           settings: {
-            retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
+            ...QUEUE_AFTER_FAILED_RUN,
+            retry: { enabled: true, maxRetries: 2, baseDelayMs: 1000 },
           },
           onReport: (report) => console.warn("pi report", report),
         },
