@@ -16,7 +16,12 @@ import { createGitClient } from "@cloudflare/computer/git";
 import { PiHarness, type PiOperationResult } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
 import type { EntryId, Extension } from "@earendil-works/pi-durable";
-import { RUN_BUDGET, type BudgetLimits } from "../domain/budget";
+import {
+  RUN_BUDGET,
+  SESSION_DAILY_BUDGET,
+  type BudgetLimits,
+  type DailyLimits,
+} from "../domain/budget";
 import type { AgentEvent } from "../domain/event";
 import { piLogSource, readLog } from "../infra/pi/read-log";
 import type { LogQuery, SessionLog } from "../domain/session-log";
@@ -24,6 +29,7 @@ import { runEvent } from "../infra/pi/run-event";
 import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
 import { BUDGET_ENTRY, createBudgetExtension } from "../infra/pi/extensions/budget";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
+import { QUEUE_AFTER_FAILED_RUN } from "../infra/pi/harness-settings";
 import { createGitExtension } from "../infra/pi/extensions/git";
 import { createTestsExtension, type CommandResult } from "../infra/pi/extensions/tests";
 import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extensions/workspace";
@@ -115,13 +121,20 @@ export class PiHarnessTestObject extends DurableObject<Env> {
   readonly #commands: { argv: string[]; cwd: string }[] = [];
   #commandResult: CommandResult = { exitCode: 0, stdout: "", stderr: "" };
   #clock = 0;
-  #budget: BudgetLimits = RUN_BUDGET;
+  #budget: BudgetLimits | "unreadable" = RUN_BUDGET;
+  #daily: DailyLimits = SESSION_DAILY_BUDGET;
   readonly #extensions: Extension[] = [
     createWorkspaceExtension(this.workspace),
     createGitExtension(this.workspace),
     createArtifactsExtension(this.workspace, this.#fakeArtifacts(), { pollMs: 1 }),
     createCodemodeExtension(),
-    createBudgetExtension(() => this.#budget),
+    createBudgetExtension(
+      () => {
+        if (this.#budget === "unreadable") throw new Error("budget store unavailable");
+        return this.#budget;
+      },
+      () => this.#daily,
+    ),
     createTestsExtension(
       this.workspace,
       async (argv, cwd) => {
@@ -142,7 +155,10 @@ export class PiHarnessTestObject extends DurableObject<Env> {
           models,
           registry: this.registry,
           onWake,
-          settings: { retry: { enabled: false, maxRetries: 0, baseDelayMs: 0 } },
+          settings: {
+            ...QUEUE_AFTER_FAILED_RUN,
+            retry: { enabled: false, maxRetries: 0, baseDelayMs: 0 },
+          },
           onReport: (report) => console.warn("pi report", report),
         },
         context,
@@ -258,6 +274,14 @@ export class PiHarnessTestObject extends DurableObject<Env> {
 
   async busy(): Promise<boolean> {
     return this.harness.session().busy();
+  }
+
+  setDailyBudget(limits: Partial<DailyLimits>): void {
+    this.#daily = { ...SESSION_DAILY_BUDGET, ...limits };
+  }
+
+  makeBudgetUnreadable(): void {
+    this.#budget = "unreadable";
   }
 
   setBudget(limits: Partial<BudgetLimits>): void {

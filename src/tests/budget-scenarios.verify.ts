@@ -5,7 +5,7 @@ import type { TranscriptEntry } from "./worker";
 
 type Plan = `plan ${number} ${"answer" | "error"}`;
 type Delivery = "after" | "queued";
-type Limits = { readonly turns: number; readonly tokens: number };
+type Limits = { readonly turns: number; readonly tokens: number; readonly dailyTokens: number };
 type Scenario = {
   readonly runs: readonly Plan[];
   readonly delivery: Delivery;
@@ -18,10 +18,11 @@ const PLANS: readonly Plan[] = [0, 1, 2, 3].flatMap((rounds) => [
   `plan ${rounds} error` as const,
 ]);
 const LIMITS: readonly Limits[] = [
-  ...[1, 2, 3].map((turns) => ({ turns, tokens: UNLIMITED })),
-  ...[1, 7_000, 13_500].map((tokens) => ({ turns: UNLIMITED, tokens })),
-  { turns: 2, tokens: 7_000 },
-  { turns: UNLIMITED, tokens: UNLIMITED },
+  ...[1, 2, 3].map((turns) => ({ turns, tokens: UNLIMITED, dailyTokens: UNLIMITED })),
+  ...[1, 7_000, 13_500].map((tokens) => ({ turns: UNLIMITED, tokens, dailyTokens: UNLIMITED })),
+  { turns: 2, tokens: 7_000, dailyTokens: UNLIMITED },
+  ...[7_000, 20_000].map((dailyTokens) => ({ turns: UNLIMITED, tokens: UNLIMITED, dailyTokens })),
+  { turns: UNLIMITED, tokens: UNLIMITED, dailyTokens: UNLIMITED },
 ];
 
 function scenarios(): Scenario[] {
@@ -49,7 +50,7 @@ function budgetViolations(scenario: Scenario, played: Played): string[] {
     if (entry.kind === "pi.user") runs.push([]);
     runs.at(-1)?.push(entry);
   }
-  const expected = expectedRuns(scenario, runs[0] ?? []);
+  const expected = scenario.runs.length;
   const whole = [
     ...(played.settled ? [] : ["the agent was still busy when the scenario gave up waiting"]),
     ...(runs.length === expected
@@ -59,21 +60,24 @@ function budgetViolations(scenario: Scenario, played: Played): string[] {
   return [
     ...whole,
     ...runs.flatMap((run, index) =>
-      runViolations(run, scenario.limits, plannedRounds(scenario.runs[index])).map(
-        (v) => `run ${index + 1}: ${v}`,
-      ),
+      runViolations(
+        run,
+        scenario.limits,
+        plannedRounds(scenario.runs[index]),
+        runs
+          .slice(0, index)
+          .flat()
+          .reduce((sum, entry) => sum + tokensOf(entry), 0),
+      ).map((v) => `run ${index + 1}: ${v}`),
     ),
   ];
 }
 
-function expectedRuns(scenario: Scenario, first: readonly TranscriptEntry[]): number {
-  const failedWithQueue =
-    scenario.delivery === "queued" &&
-    !first.some((entry) => entry.kind === BUDGET_ENTRY) &&
-    first.some((entry) =>
-      entry.messages.some((message) => "stopReason" in message && message.stopReason === "error"),
-    );
-  return failedWithQueue ? 1 : scenario.runs.length;
+function tokensOf(entry: TranscriptEntry): number {
+  return entry.messages.reduce(
+    (sum, message) => sum + ("tokens" in message ? message.tokens : 0),
+    0,
+  );
 }
 
 function plannedRounds(plan: Plan | undefined): number {
@@ -84,7 +88,12 @@ function stoppedBy(played: Played): boolean {
   return played.transcript.some((entry) => entry.kind === BUDGET_ENTRY);
 }
 
-function runViolations(run: readonly TranscriptEntry[], limits: Limits, planned: number): string[] {
+function runViolations(
+  run: readonly TranscriptEntry[],
+  limits: Limits,
+  planned: number,
+  spentEarlierToday: number,
+): string[] {
   let rounds = 0;
   let tokens = 0;
   let stopAt: number | undefined;
@@ -105,7 +114,12 @@ function runViolations(run: readonly TranscriptEntry[], limits: Limits, planned:
     if (!roundEnds) return;
     pendingRound = false;
     rounds += 1;
-    if (stopAt === undefined && (rounds >= limits.turns || tokens >= limits.tokens)) {
+    if (
+      stopAt === undefined &&
+      (rounds >= limits.turns ||
+        tokens >= limits.tokens ||
+        spentEarlierToday + tokens >= limits.dailyTokens)
+    ) {
       stopAt = position + 1;
       if (run[stopAt]?.kind !== BUDGET_ENTRY) {
         violations.push(
@@ -135,7 +149,9 @@ async function idle(agent: { busy(): Promise<boolean> }): Promise<boolean> {
 
 async function play(scenario: Scenario): Promise<Played> {
   const agent = env.PI_HARNESS_TEST.getByName(crypto.randomUUID());
-  await agent.setBudget({ ...scenario.limits, costUsd: UNLIMITED, elapsedMs: UNLIMITED });
+  const { dailyTokens, ...run } = scenario.limits;
+  await agent.setBudget({ ...run, costUsd: UNLIMITED, elapsedMs: UNLIMITED });
+  await agent.setDailyBudget({ tokens: dailyTokens, costUsd: UNLIMITED });
   await agent.writeWorkspaceFile("/workspace/note.txt", "hello");
   let settled = true;
   for (const plan of scenario.runs) {
@@ -163,7 +179,7 @@ describe("run budget over every scripted scenario", () => {
     }
     expect(found.slice(0, 10)).toEqual([]);
     expect(LIMITS.filter((limits) => !stoppingLimits.has(limits))).toEqual([
-      { turns: UNLIMITED, tokens: UNLIMITED },
+      { turns: UNLIMITED, tokens: UNLIMITED, dailyTokens: UNLIMITED },
     ]);
   }, 900_000);
 });

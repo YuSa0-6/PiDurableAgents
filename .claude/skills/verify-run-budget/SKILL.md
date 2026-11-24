@@ -1,53 +1,64 @@
 ---
 name: verify-run-budget
-description: Check that the run budget (tool rounds, tokens, cost, elapsed time) stops each D1Agents run exactly at the first tool round that reaches a limit, counting only that run. Use when a change touches src/infra/pi/extensions/budget.ts, src/domain/budget.ts, how PiAgent installs the budget extension or submits events, or after upgrading @earendil-works/pi-durable.
+description: Check that the run budget (tool rounds, tokens, cost, elapsed time) and the daily session budget stop each D1Agents run exactly at the first tool round that reaches a limit, that an unreadable budget stops the run, and that events queued behind a failed run still run. Use when a change touches src/infra/pi/extensions/budget.ts, src/domain/budget.ts, src/infra/pi/harness-settings.ts, how PiAgent installs the budget extension or submits events, or after upgrading @earendil-works/pi-durable.
 ---
 
-# 1 回の実行の予算上限を確かめる
+# 予算上限を確かめる
 
 ## 守っている約束
 
-- 約束:1 回の実行(イベント 1 件で始まる run)は、その run で使った量が上限に届いたツール往復の直後に、`app.budget` の記録を 1 件だけ残して止まる。前の run の使用量は数えない
-- 破れたときの害:止まらなければモデルの利用料が上限なしに増える。早く止まれば、利用者の依頼が途中で切られ、まちがった理由が残る
+- 約束 1:1 回の実行(イベント 1 件で始まる run)は、その run で使った量か、そのセッションが今日(日本時間 0 時から)使った量が上限に届いたツール往復の直後に、`app.budget` の記録を 1 件だけ残して止まる。run の上限は前の run を数えない
+- 約束 2:予算を読めないときは、止める側に倒れる
+- 約束 3:モデルエラーで終わった run の後ろに積まれたイベントも、待たずに次の run として動く
+- 破れたときの害:止まらなければモデルの利用料が上限なしに増える。早く止まれば、利用者の依頼が途中で切られ、まちがった理由が残る。積まれたイベントが止まれば、`wait=false` の送り手に返事が届かない
+
+| 上限                      | 値                                          | 置き場所                                 |
+| ------------------------- | ------------------------------------------- | ---------------------------------------- |
+| 1 回の実行                | ツール往復 20、150 万トークン、$0.30、10 分 | `src/domain/budget.ts` の `RUN_BUDGET`   |
+| 1 セッションの 1 日       | $3(日本時間 0 時に数え直す)                 | `SESSION_DAILY_BUDGET`、`japanDayStart`  |
+| モデルの再試行            | 2 回(超過は最大でモデル呼び出し 3 回分)     | `src/application/pi-agent.ts` の `retry` |
+| 失敗した run の後ろの待ち | `afterFailedRun: "continue"`                | `src/infra/pi/harness-settings.ts`       |
 
 ## 性質(`src/tests/budget-scenarios.verify.ts` の `budgetViolations`)
 
-ログを `pi.user` の位置で run に分け、run ごとに次を確かめます。あわせて、どのパターンも待ち時間内に終わること、run の数が送ったイベントの数と同じこと、止まらなかった run は台本どおりの往復数を終えたことも確かめます(反例は `still busy`、`expected … runs`、`planned … tool rounds`)。台本が効かなくなって検査が空振りするのを防ぐためです。
+ログを `pi.user` の位置で run に分け、run ごとに次を確かめます。あわせて、どのパターンも待ち時間内に終わること、run の数が送ったイベントの数と同じこと(約束 3)、止まらなかった run は台本どおりの往復数を終えたことも確かめます(反例は `still busy`、`expected … runs`、`planned … tool rounds`)。台本が効かなくなって検査が空振りするのを防ぐためです。
 
-| 性質               | 内容                                                                                                    | 反例の書き出し                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| 届いたら止まる     | ツール往復 `n` 回目の終わりで、往復数 `≥ turns` かトークン合計 `≥ tokens` なら、次の記録が `app.budget` | `round n reached … but the next entry is …`               |
-| 止まったら呼ばない | `app.budget` の後に、同じ run でモデルを呼ばない                                                        | `model called again after the round that reached a limit` |
-| 届く前は止めない   | 上限に届いていない run に `app.budget` がない                                                           | `stopped at entry …`                                      |
-| 1 回だけ           | 1 つの run に `app.budget` は 1 件まで                                                                  | `… budget entries`                                        |
+| 性質               | 内容                                                                                                                                                                              | 反例の書き出し                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 届いたら止まる     | ツール往復 `n` 回目の終わりで、往復数 `≥ turns`、run のトークン合計 `≥ tokens`、前の run も合わせたセッションのトークン合計 `≥ dailyTokens` のどれかなら、次の記録が `app.budget` | `round n reached … but the next entry is …`               |
+| 止まったら呼ばない | `app.budget` の後に、同じ run でモデルを呼ばない                                                                                                                                  | `model called again after the round that reached a limit` |
+| 届く前は止めない   | 上限に届いていない run に `app.budget` がない                                                                                                                                     | `stopped at entry …`                                      |
+| 1 回だけ           | 1 つの run に `app.budget` は 1 件まで                                                                                                                                            | `… budget entries`                                        |
 
-トークン合計は、その run の `pi.assistant` の `usage.totalTokens` を検査側で数え直したものです。拡張の `run.first` とは別の方法(`pi.user` での区切り)で run を決めるので、「前の run を数える」ずれを見つけられます。
+トークン合計は、`pi.assistant` の `usage.totalTokens` を検査側で数え直したものです。拡張の `run.first` とは別の方法(`pi.user` での区切り)で run を決めるので、「前の run を数える」ずれを見つけられます。
+
+単体テストが受け持つ性質:
+
+| 性質                         | テスト                                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| 日の区切りと前日分を数えない | `src/domain/budget.test.ts` の `daily session budget`                        |
+| 予算を読めなければ止める     | `src/tests/budget.test.ts` の `stops the run when the budget cannot be read` |
+| 費用と経過時間の数え方       | `src/domain/budget.test.ts` と `src/tests/budget.test.ts`                    |
 
 ## 確かめ方と範囲
 
 TypeScript のコードと pi-durable の内部にそのままかけられる検証器はないので、本物の拡張と本物の pi-durable を workerd 上で動かし、台本どおりに動く偽のモデルで、決めた範囲の実行パターンを全部試します。TLA+ にしないのは、Durable Object が `runtime.commit` を 1 つずつ順に処理し、アプリは `whenBusy: "followUp"` でしか送らないので、調べるべき割り込みの順番がないからです。危ないのは pi-durable の数え方(`startRun`、`run.turns`、`run.first`)で、手で写したモデルはすぐに古くなります。
 
-- 範囲:台本 8 種(ツール往復 0〜3 回 × 最後が答えかモデルエラー)の 1 件と 2 件の並び。2 件目は「1 件目が終わってから送る」と「1 件目の実行中に積む」(本番の `wait=false` と同じ `session.submit` を `whenBusy` なしで呼ぶ)の 2 通り。上限 8 組(turns 1・2・3、tokens 1・7,000・13,500、turns 2 と tokens 7,000、上限なし)。合計 1,024 通り。「積む」並びから 1 件目が `plan 0 error` のものは除く(1 件目が 2 件目を送る前に失敗するかどうかが実行ごとに変わるため)。偽モデルのトークンは文字数 ÷ 4 で、1 回の呼び出しが約 6,600 なので、7,000 は 2 往復目、13,500 は 3 往復目で止まる。上限のある 7 組は、どれも少なくとも 1 つのパターンで実際に止まることも確かめる(止まらない上限は検査の役に立たないため)
-- 検査が失敗できること:`bun run verify:budget -- --mutants` が、わざと壊した 5 つの版(run ではなくセッション全体を数える、止めても run が続く、往復数を 1 少なく数える、最後の呼び出しのトークンだけ数える、`≥` を `>` にする)をそれぞれ検出することを確かめる
+- 範囲:台本 8 種(ツール往復 0〜3 回 × 最後が答えかモデルエラー)の 1 件と 2 件の並び。2 件目は「1 件目が終わってから送る」と「1 件目の実行中に積む」(本番の `wait=false` と同じ `session.submit` を `whenBusy` なしで呼ぶ)の 2 通り。上限 10 組(turns 1・2・3、tokens 1・7,000・13,500、turns 2 と tokens 7,000、dailyTokens 7,000・20,000、上限なし)。合計 1,280 通り。「積む」並びから 1 件目が `plan 0 error` のものは除く(1 件目が 2 件目を送る前に失敗するかどうかが実行ごとに変わるため)。偽モデルのトークンは文字数 ÷ 4 で、1 回の呼び出しが約 6,600 なので、7,000 は 2 往復目、13,500 は 3 往復目、dailyTokens 20,000 は 2 件目の run で止まる。上限のある 9 組は、どれも少なくとも 1 つのパターンで実際に止まることも確かめる(止まらない上限は検査の役に立たないため)
+- 検査が失敗できること:`bun run verify:budget -- --mutants` が、わざと壊した 9 つの版をそれぞれ検出することを確かめる(run ではなくセッション全体を数える、止めても run が続く、往復数を 1 少なく数える、最後の呼び出しのトークンだけ数える、1 日の上限を見ない、前日分も数える、読めない予算で止めない、失敗した run の後ろを待たせる、`≥` を `>` にする)
 - 範囲外
-  - 費用(`costUsd`)と経過時間(`elapsedMs`):偽のモデルは費用が常に 0、時刻は実時間なので、全パターンの中では上限なしにしている。数え方の単体テストは `src/tests/budget.test.ts`
-  - モデルの再試行(本番は `maxRetries: 5`):`maxRetries: 2` で失敗する台本を流すとログの `pi.assistant` は 1 件だけだった。再試行が起きたのか、起きてもログに残らないのかは確かめていない。どちらにせよ予算はログしか見ないので、再試行の分は数えない
-  - 会話の圧縮(compaction)の使用量、`steer` と `continue`(アプリは使っていない)
-  - ログの 1 ページ(100 件)を超える長い run。範囲内の run は 10 件以下なので、`runUsage` のページ送りは通っていない
-
-## 見つけたこと(コードは変えていない)
-
-| 内容                                                                                                                                                                                               | 害                                                                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `wait=false` で積んだイベントは、それぞれ新しい run になり、予算が 0 から数え直される                                                                                                              | セッション全体の支出には上限がない。1 件ごとの上限という設計どおりだが、積まれた数だけ使える                    |
-| 予算の確認はツール往復の後にしか動かない                                                                                                                                                           | ツールを使わない run と、モデルの再試行は確認されない。1 回の呼び出しは上限を越えうる                           |
-| モデルエラーで終わった run の後ろに積まれたイベントは、次のイベントが来るまで動かない(pi-durable の `afterFailedRun` の既定値 `keep`)。次のイベントと 1 つの run にまとめられ、予算も 1 つ分になる | `wait=false` で送ったイベントが、次に誰かが送るまで返事をもらえない。検査では、この場合の run の数を 1 と数える |
-| フックが例外を投げると報告だけされ、run は続く                                                                                                                                                     | 予算を読めないときは止めない側に倒れる                                                                          |
+  - 費用(`costUsd`)と経過時間(`elapsedMs`):偽のモデルは費用が常に 0、時刻は実時間なので、全パターンの中では上限なしにしている。1 日の上限は全パターンの中ではトークンで試し、費用は同じ足し算の通り道を通る
+  - 日付をまたぐ実行:全パターンは同じ日の中で動く。日の区切りは単体テストで確かめる
+  - モデルの再試行:pi-durable のコードを読んだ限り、再試行の呼び出しも `appendAssistant` でログに残るので数えられる(試してはいない)
+  - ツールを使わない run:予算の確認はツール往復の後だけなので、確認されない。超過はモデル呼び出し 1 回分(再試行を含め最大 3 回)まで。pi-durable にモデル呼び出しを事前に止めるフックはない。同じ理由で、1 日の上限に届いた後に来たイベントも、止まるまでにモデル呼び出しを 1 回(ツールを使わなければ答えまで)使う
+  - 1 日の支出の読み方:`todaysSpend` は新しい順に読み、前日の記録に当たったところでやめる。今日の記録はツール往復のたびに全部読み直す
+  - 会話の圧縮(compaction)の使用量、`steer`(アプリは使っていない)
+  - ログの 1 ページ(100 件)を超える長い run。範囲内の run は 10 件以下なので、`runUsage` と `todaysSpend` のページ送りは通っていない
 
 ## 手順
 
-1. 変更が下の「対象のコード」に触れるか確かめる。`git diff <同期コミット> -- src/infra/pi/extensions/budget.ts src/domain/budget.ts src/application/pi-agent.ts src/infra/pi/run-event.ts src/tests/worker.ts src/tests/budget-scenarios.verify.ts package.json`(`package.json` は `@earendil-works/pi-durable` の版を見るため)
-2. 検査を流す(約 1 分半):
+1. 変更が下の「対象のコード」に触れるか確かめる。`git diff <同期コミット> -- src/infra/pi/extensions/budget.ts src/domain/budget.ts src/infra/pi/harness-settings.ts src/application/pi-agent.ts src/infra/pi/run-event.ts src/tests/worker.ts src/tests/budget-scenarios.verify.ts package.json`(`package.json` は `@earendil-works/pi-durable` の版を見るため)
+2. 検査を流す(約 2 分):
 
    ```sh
    bun run verify:budget
@@ -57,25 +68,26 @@ TypeScript のコードと pi-durable の内部にそのままかけられる検
    - 通る:約束は範囲の中で保たれている
    - 落ちる:最初の 10 件の反例が `{"runs":[…],"delivery":…,"limits":…} -> run 2: …` の形で出る。台本の並びと上限を、利用者が送ったイベントの順番として読み、どの往復で止まるべきだったかを確かめる。本物のバグなので、性質や範囲をゆるめずに直す
    - すべての台本で同じ反例が出る、または `pi.user` の位置がずれる:pi-durable の記録の形(`pi.user`・`pi.tool-result`・`pi.assistant` の並び)が変わった可能性がある。`src/tests/worker.ts` の `transcript` で実際の並びを見て、検査側の区切り方を直す
-4. 検査そのものを直したとき、または対象のコードを意図して変えたときは、壊した版を流す(約 8 分):
+4. 検査そのものを直したとき、または対象のコードを意図して変えたときは、壊した版を流す(約 20 分):
 
    ```sh
    bun run verify:budget -- --mutants
    ```
 
-   まず壊していないコードで検査が通ることを確かめ、通らなければ止まる。`caught` 以外の行があれば検査が弱い。途中で止めたときは、壊した版がファイルに残るので `git checkout src/infra/pi/extensions/budget.ts src/domain/budget.ts` で戻す。`stale` はその版の置き換え元がコードから消えたという意味なので、`scripts/verify/budget.ts` の `MUTANTS` を今のコードに合わせる
+   まず壊していないコードで単体テストと全パターンの検査が通ることを確かめ、通らなければ止まる。`caught` 以外の行があれば検査が弱い。途中で止めたときは、壊した版がファイルに残るので `git checkout src/infra/pi/extensions/budget.ts src/domain/budget.ts src/infra/pi/harness-settings.ts` で戻す。`stale` はその版の置き換え元がコードから消えたという意味なので、`scripts/verify/budget.ts` の `MUTANTS` を今のコードに合わせる
 
 5. 上限の種類を足したら、`src/tests/budget-scenarios.verify.ts` の `LIMITS` と `runViolations`、壊した版、この SKILL.md の表を同じ変更で直す
 
 ## 対象のコードと同期コミット
 
-| 検査           | 対象                                                                                                                                                                 |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 数え方と止め方 | `src/infra/pi/extensions/budget.ts` の `createBudgetExtension`、`runUsage`、`BudgetStop`                                                                             |
-| 上限の判定     | `src/domain/budget.ts` の `overBudget`、`RUN_BUDGET`                                                                                                                 |
-| 呼び出し側     | `src/application/pi-agent.ts` の `createBudgetExtension(() => RUN_BUDGET)`、`src/infra/pi/run-event.ts` の `submit` と `prompt`(`whenBusy` を指定しない)             |
-| 前提           | `@earendil-works/pi-durable` 1.6 の `startRun`・`run.turns`・`run.first`、`afterTools` の `terminate` が final 境界で run を終えること(`dist/harness/generation.js`) |
-| 台本と記録     | `src/tests/worker.ts` の `planned`、`transcript`、`submit`、`busy`                                                                                                   |
+| 検査           | 対象                                                                                                                                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 数え方と止め方 | `src/infra/pi/extensions/budget.ts` の `createBudgetExtension`、`budgetVerdict`、`runUsage`、`todaysSpend`、`BudgetStop`                                                                           |
+| 上限の判定     | `src/domain/budget.ts` の `overBudget`、`overDailyBudget`、`spendSince`、`japanDayStart`、`RUN_BUDGET`、`SESSION_DAILY_BUDGET`、`BUDGET_UNREADABLE`                                                |
+| 失敗後の待ち   | `src/infra/pi/harness-settings.ts` の `QUEUE_AFTER_FAILED_RUN`                                                                                                                                     |
+| 呼び出し側     | `src/application/pi-agent.ts` の `createBudgetExtension(() => RUN_BUDGET, () => SESSION_DAILY_BUDGET)` と `settings`、`src/infra/pi/run-event.ts` の `submit` と `prompt`(`whenBusy` を指定しない) |
+| 前提           | `@earendil-works/pi-durable` 1.6 の `startRun`・`run.turns`・`run.first`、`afterTools` の `terminate` が final 境界で run を終えること、`afterFailedRun`(`dist/harness/generation.js`)             |
+| 台本と記録     | `src/tests/worker.ts` の `planned`、`transcript`、`submit`、`busy`、`setDailyBudget`、`makeBudgetUnreadable`                                                                                       |
 
-- 同期コミット:8ac54d0302fd24140f3e7fa2614efe714045b7ca(PR #44 のマージ)
+- 同期コミット:634d51569b863d5b1790179acb60d7de9ced0653(PR #48 の予算上限の修正)
 - 対象のコードが変わったら、上の手順で検査が今のコードを表していると確かめてから、同期コミットを進める。確かめていないのに進めない
