@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireBearer } from "../bearer";
 import { compose, type App } from "../compose";
 import { health } from "../../usecase/health";
+import { listModels } from "../../usecase/list-models";
 import { listSessionRepos } from "../../usecase/list-session-repos";
 import { readSessionLog } from "../../usecase/read-session-log";
 import { sendEvent } from "../../usecase/send-event";
@@ -33,6 +34,12 @@ const sendInput = z.object({
     .optional()
     .describe(
       "Wait for the answer. Defaults to true. False accepts the instruction and answers in the background.",
+    ),
+  model: z
+    .string()
+    .optional()
+    .describe(
+      "Model name from the models tool. The session keeps it for later events. A busy session refuses a switch.",
     ),
 });
 
@@ -82,7 +89,13 @@ export class AgentMcp {
         AgentMcp.#reply(() =>
           sendEvent(
             app,
-            { text: input.text, session: input.session, id: input.id, wait: input.wait },
+            {
+              text: input.text,
+              session: input.session,
+              id: input.id,
+              wait: input.wait,
+              model: input.model,
+            },
             "mcp",
           ),
         ),
@@ -110,6 +123,16 @@ export class AgentMcp {
         AgentMcp.#reply(() =>
           readSessionLog(app.agents, input.session, { after: input.after, limit: input.limit }),
         ),
+    );
+    server.registerTool(
+      "models",
+      {
+        title: "Models",
+        description:
+          "List the model names send_event accepts and the default for new sessions. Same payload as GET /api/models.",
+        annotations: { readOnlyHint: true },
+      },
+      () => AgentMcp.#reply(() => listModels()),
     );
     server.registerTool(
       "health",

@@ -1,4 +1,5 @@
 import { InvalidInput } from "./errors";
+import { modelRefOf, parseModelChoice, type ModelRef } from "./model-choice";
 import { isSessionId, type SessionId } from "./session-id";
 
 export const MAX_EVENT_TEXT = 8000;
@@ -10,6 +11,7 @@ export type EventInput = {
   readonly type?: unknown;
   readonly id?: unknown;
   readonly wait?: unknown;
+  readonly model?: unknown;
 };
 
 export type AgentEvent = {
@@ -19,10 +21,11 @@ export type AgentEvent = {
   readonly text: string;
   readonly session: SessionId;
   readonly receivedAt: string;
+  readonly model?: ModelRef;
 };
 
 export type EventResult = {
-  readonly status: "done" | "unanswered" | "queued";
+  readonly status: "done" | "unanswered" | "queued" | "refused";
   readonly operationId: string;
   readonly text?: string;
   readonly reason?: string;
@@ -45,6 +48,7 @@ export function parseEvent(input: EventInput, defaults: EventDefaults): AgentEve
   if (input.text.length > MAX_EVENT_TEXT) {
     throw new InvalidInput(`text must be at most ${MAX_EVENT_TEXT} characters`);
   }
+  const model = parseModelChoice(input.model);
   return {
     id: textOr(input.id, defaults.id),
     source: textOr(input.source, defaults.source),
@@ -52,6 +56,7 @@ export function parseEvent(input: EventInput, defaults: EventDefaults): AgentEve
     text: input.text,
     session,
     receivedAt: defaults.receivedAt,
+    ...(model ? { model: modelRefOf(model) } : {}),
   };
 }
 

@@ -1,7 +1,7 @@
 # D1Agents: Pi Durable Agent on Cloudflare
 
 Cloudflare Agents SDK の `PiHarness`（Pi Durable）を Workers + Durable Objects で動かすエージェントです。ブラウザ UI はなく、HTTP API とリモート MCP（Streamable HTTP の `/mcp`）で使います。
-HTTP は **Event Router（Hono）** から入り、MCP のツールも同じユースケース（`src/usecase/`）を通ります。どちらも **Pi Durable Agent** が答えます。モデルは OpenRouter の GLM 5.3 に固定し、Cloudflare AI Gateway 経由で呼びます。
+HTTP は **Event Router（Hono）** から入り、MCP のツールも同じユースケース（`src/usecase/`）を通ります。どちらも **Pi Durable Agent** が答えます。モデルは決まった一覧から依頼ごとに選べます(既定は OpenRouter の GLM 5.3)。どれも Cloudflare AI Gateway 経由で呼びます。
 
 - デプロイ先: https://d1agents-pi-durable.itumens.workers.dev
 - 元にしたサンプル: [cloudflare/agents `examples/next/harnesses/pi`](https://github.com/cloudflare/agents/tree/main/examples/next/harnesses/pi)
@@ -23,7 +23,7 @@ flowchart LR
   R --> S
   S --> P[PiAgent<br>Durable Object + Pi Durable]
   P --> GW[Cloudflare AI Gateway<br>d1agents]
-  GW --> OR[OpenRouter<br>GLM 5.3]
+  GW --> OR[OpenRouter / Anthropic<br>BYOK]
   P --> T[pi 拡張<br>workspace / git / artifacts / codemode / tests]
   T --> AR[(Artifacts)]
   T --> SB[Sandbox<br>Durable Object + Container]
@@ -51,16 +51,29 @@ flowchart LR
 
 ## モデル
 
-GLM 5.3（`z-ai/glm-5.3`、OpenRouter の 100 万トークンあたり入力 $0.07 / 出力 $1.40）に固定しています。変えるときは `src/infra/llm/openrouter.ts` の `MODEL_ID` を書き換えます。
+`send_event` と `POST /api/events` の `model` に、下の名前を渡して選びます。一覧は `GET /api/models` と MCP の `models` でも返します。選んだモデルはそのセッションに残り、次からの依頼にも使います。
 
-### OpenRouter の呼び方
+| 名前                  | プロバイダー | モデル ID                      |
+| --------------------- | ------------ | ------------------------------ |
+| `glm-5.3`(既定)       | OpenRouter   | `z-ai/glm-5.3`                 |
+| `deepseek-v4.1-flash` | OpenRouter   | `deepseek/deepseek-v4.1-flash` |
+| `grok-4.7`            | OpenRouter   | `x-ai/grok-4.7`                |
+| `claude-sonnet-5.5`   | Anthropic    | `claude-sonnet-5-5`            |
+| `claude-haiku-5.5`    | Anthropic    | `claude-haiku-5-5`             |
+| `gemini-3.5-flash`    | OpenRouter   | `google/gemini-3.5-flash`      |
 
-| 項目           | 内容                                                                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API キー       | AI Gateway `d1agents` の Provider Keys に登録（BYOK）。Worker はキーを持たない                                                                     |
-| Gateway の指定 | `cloudflare.config.ts` の `AI_GATEWAY_ID`                                                                                                          |
-| Pi への登録    | `gatewayOpenRouterProvider()` が `openrouter` という名前の pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
-| モデル情報     | pi-ai の OpenRouter カタログから取得                                                                                                               |
+- 一覧は `src/domain/model-choice.ts` の `MODEL_CHOICES` です。一覧にない名前は 400 で断ります
+- 実行中のセッションで別のモデルを選ぶと 409 で断ります。同じモデルなら受け付けます
+- 1 回の実行の上限 $0.30 はどのモデルでも同じです。高いモデルほど少ない往復で上限に届きます
+
+### AI Gateway の呼び方
+
+| 項目           | 内容                                                                                                                                                             |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API キー       | AI Gateway `d1agents` の Provider Keys に登録(BYOK)。Worker はキーを持たない                                                                                     |
+| Gateway の指定 | `cloudflare.config.ts` の `AI_GATEWAY_ID`                                                                                                                        |
+| Pi への登録    | `gatewayModels()`(`src/infra/llm/gateway-models.ts`)がプロバイダーごとに pi-ai プロバイダーを作り、すべてのリクエストを `AI` バインディング経由で Gateway に流す |
+| モデル情報     | pi-ai の各社カタログから取得。カタログにないモデル、Gateway が中継できない API のモデル(Google の `google-generative-ai` など)、料金が 0 のモデルは起動時に断る  |
 
 Gemini は再帰する JSON スキーマを受け付けません。そのため `exec` ツールの `input` は「任意のオブジェクト」として渡しています（`src/infra/pi/extensions/workspace.ts`）。
 
@@ -68,7 +81,8 @@ Gemini は再帰する JSON スキーマを受け付けません。そのため 
 
 | メソッド | パス                      | 内容                                                                                           |
 | -------- | ------------------------- | ---------------------------------------------------------------------------------------------- |
-| GET      | `/api/health`             | 動作確認と、使っているモデル                                                                   |
+| GET      | `/api/health`             | 動作確認と、既定のモデル                                                                       |
+| GET      | `/api/models`             | `model` に渡せる名前の一覧と既定                                                               |
 | POST     | `/api/events`             | エージェントに依頼する                                                                         |
 | GET      | `/api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン                      |
 | GET      | `/api/sessions/:id/log`   | そのセッションの状況(`busy`・待ち行列)と会話ログ。`?after=<seq>&limit=<1〜200>` で続きから読む |
@@ -131,12 +145,13 @@ curl https://d1agents-pi-durable.itumens.workers.dev/api/sessions/demo/repos -H 
 
 Grok Bots などのリモート MCP コネクタから、同じ Worker を呼べます。エンドポイントは Streamable HTTP の `/mcp` です（`agents/mcp/server` の `createMcpHandler`）。OAuth はまだありません。クライアントが静的な `Authorization` ヘッダーを付けます。
 
-| ツール          | 対応する API                  | 内容                                                                                                                                                                                                            |
-| --------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `send_event`    | `POST /api/events`            | エージェントに依頼する。`text`、`session`（既定 `default`）、冪等キー `id`、`wait`（既定 `true`）。空の依頼と 8,000 文字を超える依頼は HTTP と同じ文言で断る。会話ログの `source` は `mcp`、`type` は `message` |
-| `session_repos` | `GET /api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン                                                                                                                                       |
-| `session_log`   | `GET /api/sessions/:id/log`   | そのセッションの状況と会話ログ。`after` に前回の `lastSeq` を渡すと続きから読める                                                                                                                               |
-| `health`        | `GET /api/health`             | 動作確認と、使っているモデル                                                                                                                                                                                    |
+| ツール          | 対応する API                  | 内容                                                                                                                                                                                                                                      |
+| --------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `send_event`    | `POST /api/events`            | エージェントに依頼する。`text`、`session`（既定 `default`）、冪等キー `id`、`wait`（既定 `true`）、`model`(`models` の名前)。空の依頼と 8,000 文字を超える依頼は HTTP と同じ文言で断る。会話ログの `source` は `mcp`、`type` は `message` |
+| `session_repos` | `GET /api/sessions/:id/repos` | そのセッションの Artifacts リポジトリと、1 時間有効な読み取り専用トークン                                                                                                                                                                 |
+| `session_log`   | `GET /api/sessions/:id/log`   | そのセッションの状況と会話ログ。`after` に前回の `lastSeq` を渡すと続きから読める                                                                                                                                                         |
+| `models`        | `GET /api/models`             | `model` に渡せる名前の一覧と既定                                                                                                                                                                                                          |
+| `health`        | `GET /api/health`             | 動作確認と、既定のモデル                                                                                                                                                                                                                  |
 
 ツールの戻り値は、対応する HTTP API と同じ JSON です。検証で断ったときは `{ "error": "..." }` をツールエラーとして返します。
 
@@ -384,7 +399,7 @@ bunx cf deploy --dry-run
 | ---------------------- | ------------------------------------------ | ---------------------------------------------------- |
 | 入口                   | `fetch` 関数で直接振り分け                 | Hono の Event Router                                 |
 | 画面                   | React のチャット UI（WebSocket）           | なし。HTTP API のみ                                  |
-| モデル                 | 固定（Workers AI `glm-5.3-flash`）         | 固定（OpenRouter の GLM 5.3、AI Gateway 経由）       |
+| モデル                 | 固定（Workers AI `glm-5.3-flash`）         | 一覧から選ぶ（既定は GLM 5.3、AI Gateway 経由）      |
 | HTTP からの利用        | なし                                       | `POST /api/events` と、Streamable HTTP の MCP `/mcp` |
 | ビルドとデプロイ       | Vite と Wrangler                           | `cf` CLI（`cloudflare.config.ts`、中は Vite+）       |
 | `agents` バージョン    | `*`（monorepo 内）                         | `^0.33.0`（Pi 1.5 対応）                             |

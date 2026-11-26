@@ -2,7 +2,7 @@ import type { PiAgent } from "./pi-agent";
 import { CloudflareAccountToken } from "../infra/auth/cloudflare-account-token";
 import { DurableAgentGateway } from "../infra/durable/durable-agent-gateway";
 import { randomIds, systemClock } from "../infra/system";
-import { MODEL_ID } from "../infra/llm/openrouter";
+import { DEFAULT_MODEL } from "../domain/model-choice";
 import type { AgentGateway } from "../usecase/ports/agent-gateway";
 import type { Authenticator } from "../usecase/ports/authenticator";
 import type { Clock } from "../usecase/ports/clock";
@@ -22,6 +22,6 @@ export function compose(env: Env, exports: Cloudflare.Exports): App {
     auth: new CloudflareAccountToken(env.ACCOUNT_ID),
     clock: systemClock,
     ids: randomIds,
-    model: MODEL_ID,
+    model: DEFAULT_MODEL.id,
   };
 }
