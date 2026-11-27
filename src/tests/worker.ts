@@ -25,7 +25,7 @@ import {
 import type { AgentEvent } from "../domain/event";
 import { piLogSource, readLog } from "../infra/pi/read-log";
 import type { LogQuery, SessionLog } from "../domain/session-log";
-import { runEvent } from "../infra/pi/run-event";
+import { runEvent, storedModelMemory } from "../infra/pi/run-event";
 import { createArtifactsExtension, type ArtifactsClient } from "../infra/pi/extensions/artifacts";
 import { BUDGET_ENTRY, createBudgetExtension } from "../infra/pi/extensions/budget";
 import { createCodemodeExtension } from "../infra/pi/extensions/codemode";
@@ -174,8 +174,10 @@ export class PiHarnessTestObject extends DurableObject<Env> {
     this.#faux.setResponses(Array.from({ length: 200 }, () => script));
   }
 
+  readonly #modelMemory = storedModelMemory(this.ctx.storage.kv, this.#faux.getModel());
+
   async handleEvent(event: AgentEvent, wait = true) {
-    return runEvent(this.harness.session(), event, wait);
+    return runEvent(this.harness.session(), event, wait, this.#modelMemory);
   }
 
   async readLog(query: LogQuery): Promise<SessionLog> {

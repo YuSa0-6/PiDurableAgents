@@ -1,3 +1,4 @@
+import { Conflict } from "../domain/errors";
 import {
   parseEvent,
   waitsForAnswer,
@@ -22,5 +23,6 @@ export async function sendEvent(
 ): Promise<{ event: AgentEvent; result: EventResult }> {
   const event = parseEvent(input, { id: deps.ids.next(), source, receivedAt: deps.clock.now() });
   const result = await deps.agents.handle(event, waitsForAnswer(input));
+  if (result.status === "refused") throw new Conflict(result.reason ?? "event refused");
   return { event, result };
 }

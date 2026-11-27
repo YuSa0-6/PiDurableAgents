@@ -83,6 +83,25 @@ describe("HTTP contract: routes", () => {
     expect(response.body).toEqual({ ok: true, model: "z-ai/glm-5.3" });
   });
 
+  it("lists the models an event may name, default first", async () => {
+    const response = await call("/api/models", { headers: auth });
+    expect(response.status).toBe(200);
+    expect(response.body.default).toBe("glm-5.3");
+    expect(response.body.models[0]).toEqual({
+      name: "glm-5.3",
+      provider: "openrouter",
+      id: "z-ai/glm-5.3",
+    });
+    expect(response.body.models.map((model: { name: string }) => model.name)).toEqual([
+      "glm-5.3",
+      "deepseek-v4.1-flash",
+      "grok-4.7",
+      "claude-sonnet-5.5",
+      "claude-haiku-5.5",
+      "gemini-3.5-flash",
+    ]);
+  });
+
   it("answers 404 as JSON outside the known routes", async () => {
     for (const path of ["/", "/nope"]) {
       const response = await call(path);
@@ -140,6 +159,11 @@ describe("HTTP contract: POST /api/events validation", () => {
       "a session over 64 characters",
       { text: "hi", session: "s".repeat(65) },
       "session must match [A-Za-z0-9_-]{1,64}",
+    ],
+    [
+      "a model outside the list",
+      { text: "hi", model: "gpt-9" },
+      "model must be one of: glm-5.3, deepseek-v4.1-flash, grok-4.7, claude-sonnet-5.5, claude-haiku-5.5, gemini-3.5-flash",
     ],
   ])("answers 400 for %s", async (_, body, error) => {
     const response = await postEvent(body);
@@ -220,6 +244,17 @@ describe("HTTP contract: POST /api/events dispatch", () => {
     });
     expect(response.status).toBe(200);
     expect(response.body.result).toEqual({ status: "queued", operationId: "event-queued" });
+  });
+
+  it("answers 409 when an event switches the model of a busy session", async () => {
+    const name = session();
+    const queued = await postEvent({ text: "plan 3 answer", session: name, wait: false });
+    expect(queued.body.result.status).toBe("queued");
+    const response = await postEvent({ text: "hi", session: name, model: "claude-sonnet-5.5" });
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(
+      /^The session is busy with .+\. Send model claude-sonnet-5-5 again when it is idle\.$/,
+    );
   });
 
   it("waits for any wait value other than false", async () => {

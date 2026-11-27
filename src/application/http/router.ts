@@ -2,9 +2,10 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { requireBearer } from "../bearer";
 import { compose, type App } from "../compose";
-import { InvalidInput } from "../../domain/errors";
+import { Conflict, InvalidInput } from "../../domain/errors";
 import type { EventInput } from "../../domain/event";
 import { health } from "../../usecase/health";
+import { listModels } from "../../usecase/list-models";
 import { listSessionRepos } from "../../usecase/list-session-repos";
 import { readSessionLog } from "../../usecase/read-session-log";
 import { sendEvent } from "../../usecase/send-event";
@@ -20,6 +21,8 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/health", (c) => c.json(health(c.var.app.model)));
+
+app.get("/api/models", (c) => c.json(listModels()));
 
 app.post("/api/events", async (c) => {
   const body = await readEventInput(c.req.raw);
@@ -43,6 +46,7 @@ app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 app.onError((error, c) => {
   if (error instanceof InvalidInput) return c.json({ error: error.message }, 400);
+  if (error instanceof Conflict) return c.json({ error: error.message }, 409);
   if (error instanceof HTTPException) return c.json({ error: error.message }, error.status);
   console.error("Event Router request failed", error);
   return c.json({ error: error.message }, 500);

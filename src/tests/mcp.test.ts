@@ -87,6 +87,7 @@ describe("MCP", () => {
     const tools = resultOf(listed.payload).tools as Array<{ name: string }>;
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "health",
+      "models",
       "send_event",
       "session_log",
       "session_repos",

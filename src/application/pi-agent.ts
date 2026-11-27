@@ -3,7 +3,6 @@ import { Workspace, type DurableObjectStorageLike } from "@cloudflare/computer";
 import { CodemodeBackend } from "@cloudflare/computer/backends/codemode";
 import { createGitClient } from "@cloudflare/computer/git";
 import { createGitModule } from "@cloudflare/computer/modules/git";
-import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle } from "agents/lifecycle";
@@ -15,9 +14,10 @@ import type { SharedRepo } from "../domain/shared-repo";
 import type { Sandbox } from "./sandbox";
 import { piLogSource, readLog } from "../infra/pi/read-log";
 import type { LogQuery, SessionLog } from "../domain/session-log";
-import { runEvent } from "../infra/pi/run-event";
+import { runEvent, storedModelMemory } from "../infra/pi/run-event";
 import { shareRepos } from "../infra/pi/share-repos";
-import { gatewayOpenRouterProvider, openRouterModel } from "../infra/llm/openrouter";
+import { catalogModel, gatewayModels } from "../infra/llm/gateway-models";
+import { DEFAULT_MODEL, modelRefOf } from "../domain/model-choice";
 import { createArtifactsExtension } from "../infra/pi/extensions/artifacts";
 import { createBudgetExtension } from "../infra/pi/extensions/budget";
 import { QUEUE_AFTER_FAILED_RUN } from "../infra/pi/harness-settings";
@@ -29,7 +29,8 @@ import { createWorkspaceExtension, JAVASCRIPT_BACKEND } from "../infra/pi/extens
 
 export class PiAgent extends DurableObject<Env> {
   readonly ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
-  readonly model = openRouterModel();
+  readonly model = catalogModel(DEFAULT_MODEL);
+  readonly modelMemory = storedModelMemory(this.ctx.storage.kv, modelRefOf(DEFAULT_MODEL));
   readonly workspace = new Workspace({
     storage: this.ctx.storage as unknown as DurableObjectStorageLike,
     git: createGitClient(),
@@ -72,8 +73,7 @@ export class PiAgent extends DurableObject<Env> {
           ),
         ),
       );
-      const models = createModels();
-      models.setProvider(gatewayOpenRouterProvider(this.ai, this.model));
+      const models = gatewayModels(this.ai);
       return Harness.open(
         storage,
         {
@@ -95,7 +95,7 @@ export class PiAgent extends DurableObject<Env> {
   readonly lifecycle = Lifecycle.install(this).use(this.harness);
 
   async handleEvent(event: AgentEvent, wait = true): Promise<EventResult> {
-    return runEvent(this.harness.session(), event, wait);
+    return runEvent(this.harness.session(), event, wait, this.modelMemory);
   }
 
   async readLog(query: LogQuery): Promise<SessionLog> {
